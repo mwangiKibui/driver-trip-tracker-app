@@ -96,13 +96,13 @@ HOURS_COL_X      = 467   # left edge of hours text (was 493 – moved left)
 HOURS_FONT_SIZE  = 6     # small enough for "H:MM" to fit in available space
 
 # ── Remarks section ────────────────────────────────────────────────────────────
-# Keep the drop-line and diagonal flag short so the rotated text starts
-# immediately next to the flag line (avoids large blank gaps).
-REMARKS_BASE_Y       = 255   # y where vertical drop-lines land (was 262 – pulled up)
-REMARKS_FLAG_DX      = 10    # diagonal x-offset of flag line
-REMARKS_FLAG_DY      = 12    # diagonal y-offset of flag line
-REMARKS_TEXT_SIZE    = 5     # font size for rotated remarks text (small to prevent overlap)
-REMARKS_WRAP_CHARS   = 12    # max chars per line before word-wrapping
+REMARKS_BASE_Y           = 255   # y where vertical drop-lines land
+REMARKS_TEXT_SIZE        = 5     # font size for rotated remarks text (small to prevent overlap)
+REMARKS_WRAP_CHARS       = 10    # max chars per line before word-wrapping
+REMARKS_MIN_TEXT_SPACING = 20    # min x-gap (px) between rendered text labels;
+                                 # labels closer than this are suppressed to avoid collision
+REMARKS_LINE_SPACING     = 3     # extra px between lines when estimating text block height
+REMARKS_TEXT_PADDING     = 2     # extra px padding added to text block height estimate
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Layout at TOTALS_Y (y≈346, in the Remarks free-write area):
@@ -217,7 +217,7 @@ def _abbrev_location(text: str) -> str:
             break
     if state_abbrev:
         return f"{city}, {state_abbrev}"
-    # No recognisable state: return city truncated to 15 chars
+    # No recognizable state: return city truncated to 15 chars
     return city[:15]
 
 
@@ -429,9 +429,18 @@ def _draw_remarks_flags(
     """
     For each duty-status change that has a remark or new location, draw:
       1. A short vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
-      2. A diagonal flag line.
-      3. Rotated black text (location + remark) along the diagonal.
+      2. A short horizontal tick at REMARKS_BASE_Y to mark the exact time.
+      3. Vertical text (top-to-bottom, angle=-90°) centred on the flag x,
+         starting just below REMARKS_BASE_Y and flowing downward into the
+         remarks area.  Text is abbreviated and word-wrapped so each line is
+         at most REMARKS_WRAP_CHARS characters wide.
+
+    Labels that would overlap a previous label (x distance < REMARKS_MIN_TEXT_SPACING)
+    have their text suppressed; the drop-line and tick are still drawn so the
+    grid remains accurate.
     """
+    last_text_x = None   # None = no label drawn yet; ensures first flag always renders
+
     for i, ev in enumerate(sorted_events):
         remark   = ev.get("remark",   "").strip()
         location = ev.get("location", "").strip()
@@ -446,30 +455,31 @@ def _draw_remarks_flags(
         status = ev.get("status", "off_duty")
         status = status if status in ROW_BOTTOM else "off_duty"
 
-        # 1. Vertical drop-line
+        # 1. Vertical drop-line from grid row bottom to REMARKS_BASE_Y
         draw.line([(x, ROW_BOTTOM[status]), (x, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
-        # 2. Diagonal flag line
-        flag_x = x + REMARKS_FLAG_DX
-        flag_y = REMARKS_BASE_Y + REMARKS_FLAG_DY
-        draw.line([(x, REMARKS_BASE_Y), (flag_x, flag_y)],
+        # 2. Short horizontal tick at REMARKS_BASE_Y to mark the time point
+        draw.line([(x - 3, REMARKS_BASE_Y), (x + 3, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
-        # 3. Rotated text (black, readable size)
-        # Abbreviate location to 'City, ST' and wrap remark at REMARKS_WRAP_CHARS
-        loc_short      = _abbrev_location(location)
-        remark_wrapped = _wrap_remark(remark)
-        text_parts = [p for p in (loc_short, remark_wrapped) if p]
-        if text_parts:
-            _paste_rotated_text(
-                img,
-                "\n".join(text_parts),
-                flag_x + 1,
-                flag_y,
-                font,
-                -45,
-            )
+        # 3. Vertical text (-90° = top-to-bottom), suppressed if too close to previous
+        too_close = last_text_x is not None and abs(x - last_text_x) < REMARKS_MIN_TEXT_SPACING
+        if not too_close:
+            loc_short      = _abbrev_location(location)
+            remark_wrapped = _wrap_remark(remark)
+            text_parts     = [p for p in (loc_short, remark_wrapped) if p]
+            if text_parts:
+                text_str = "\n".join(text_parts)
+                # Estimate original text block height (becomes rendered width after -90°
+                # rotation) so we can centre the label horizontally on the flag x.
+                n_lines    = text_str.count("\n") + 1
+                line_px    = REMARKS_TEXT_SIZE + REMARKS_LINE_SPACING
+                est_height = n_lines * line_px + REMARKS_TEXT_PADDING
+                text_x = x - est_height // 2   # centre label on flag x
+                text_y = REMARKS_BASE_Y + 3     # start just below the tick mark
+                _paste_rotated_text(img, text_str, text_x, text_y, font, -90)
+                last_text_x = x
 
 
 def _draw_bottom_totals(
