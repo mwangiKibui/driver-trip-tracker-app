@@ -24,6 +24,12 @@ import textwrap
 from PIL import Image, ImageDraw, ImageFont
 from django.conf import settings
 
+# ── Canvas ─────────────────────────────────────────────────────────────────────
+# The blank template is 513 px wide.  We expand the output canvas to OUTPUT_WIDTH
+# by padding with white on the right.  This gives the hours column and the
+# totals row more horizontal room without altering any grid coordinates.
+OUTPUT_WIDTH = 600      # final output image width (px)
+
 # ── Grid constants ─────────────────────────────────────────────────────────────
 GRID_LEFT = 56          # x pixel for midnight (hour 0)
 GRID_RIGHT = 465        # x pixel where drawn status lines end (was 491 – shortened
@@ -106,15 +112,17 @@ REMARKS_TEXT_PADDING     = 2     # extra px padding added to text block height e
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Layout at TOTALS_Y (y≈346, in the Remarks free-write area):
-#   "Driving: H:MM"            starts at TOTALS_DRV_X  (≈57px wide at 8pt)
-#   "On Duty (not driving):…"  starts at TOTALS_DUTY_X (≈108px wide at 8pt)
+#   "Driving: H:MM"            starts at TOTALS_DRV_X  → ends ≈x+57
+#   "On Duty (not driving):…"  starts at TOTALS_DUTY_X → ends ≈x+108
 #   Circled total value         starts at TOTALS_SUM_X
-# Widths: driving≈57px, gap≈10, on-duty≈108px → on-duty ends ≈x=278
-# Place total at x=270 so the whole group fits within 513px.
+#
+# The pre-printed "Shipping Documents:" label occupies x≈22–100 on the left.
+# Starting TOTALS_DRV_X at 130 clears that label; subsequent values are spaced
+# with a 10 px gap between each element.
 TOTALS_Y         = 346   # y of the summary row
-TOTALS_DRV_X     = 60    # x for "Driving: ..." label
-TOTALS_DUTY_X    = 160   # x for "On Duty (not driving): ..." label
-TOTALS_SUM_X     = 295   # x for total value + circle (was 355 – moved left)
+TOTALS_DRV_X     = 130   # x for "Driving: ..." label (right of "Shipping Documents:")
+TOTALS_DUTY_X    = 197   # x for "On Duty (not driving): ..." (10px gap after Driving ends)
+TOTALS_SUM_X     = 315   # x for total value + circle (10px gap after On Duty ends)
 
 # Red circle around the on-duty total: centred on the number
 TOTAL_CIRCLE_PAD_X = 8   # horizontal padding inside circle
@@ -543,6 +551,14 @@ def generate_log_image(
     """
     template_path = str(settings.LOG_TEMPLATE_PATH)
     img  = Image.open(template_path).convert("RGB")
+
+    # Expand canvas to OUTPUT_WIDTH (adds white space to the right of the
+    # template so the hours column and totals have more horizontal room).
+    if img.width < OUTPUT_WIDTH:
+        expanded = Image.new("RGB", (OUTPUT_WIDTH, img.height), (255, 255, 255))
+        expanded.paste(img, (0, 0))
+        img = expanded
+
     draw = ImageDraw.Draw(img)
 
     font_sm  = _load_font(7)
