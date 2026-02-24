@@ -5,8 +5,9 @@ Rules applied:
 - 11-hour driving limit per shift
 - 14-hour on-duty window per shift
 - 30-minute break required after 8 hours cumulative driving
-- 10-hour mandatory off-duty between shifts
+- 10-hour mandatory rest between shifts (spent in sleeper berth, Line 2)
 - 70-hour / 8-day cycle limit
+- End of day: post-trip TIV (on-duty, 30 min) followed by sleeper berth (Line 2)
 """
 
 DRIVE_LIMIT_HRS = 11.0       # Max driving hours per shift
@@ -157,7 +158,7 @@ def build_trip_schedule(
         nonlocal current_time, day_num, current_day, shift_drive_hrs
         nonlocal shift_duty_hrs, drive_since_break, shift_start_time
 
-        add_event(day, t, "off_duty", loc, "10-hour rest")
+        add_event(day, t, "sleeper_berth", loc, "10-hour rest")
         rest_remaining = REST_DURATION_HRS
         ct = t
 
@@ -172,7 +173,7 @@ def build_trip_schedule(
                     days.append(day)
                 day_num += 1
                 day = start_new_day(day_num)
-                add_event(day, 0, "off_duty", loc, "")
+                add_event(day, 0, "sleeper_berth", loc, "")
                 rest_remaining -= time_left_in_day
                 ct = 0.0
 
@@ -345,8 +346,8 @@ def build_trip_schedule(
     current_time += POST_TRIP_HRS
     shift_duty_hrs += POST_TRIP_HRS
 
-    # Rest at end of trip
-    add_event(current_day, current_time, "off_duty",
+    # Rest at end of trip — driver is in sleeper berth (Line 2)
+    add_event(current_day, current_time, "sleeper_berth",
               current_location_name, "End of shift")
 
     # Fill to end of day
