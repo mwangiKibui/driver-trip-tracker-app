@@ -57,14 +57,18 @@ DOT_RADIUS    = 3
 CIRCLE_WIDTH  = 2   # thickness of the red total-hours circle
 
 # ── Header field positions ─────────────────────────────────────────────────────
-HDR_DATE_Y       = 19    # y for date row
-HDR_DATE_MONTH_X = 118   # x for month value
-HDR_DATE_DAY_X   = 172   # x for day value
-HDR_DATE_YEAR_X  = 220   # x for year value
+# Date: input values sit ABOVE the underline at y=19, centred under each sub-label.
+#   "(month)" sub-label centre x≈187, "(day)" centre x≈227, "(year)" centre x≈271.
+HDR_DATE_Y       = 12    # y for date values (above the printed underline at y=19)
+HDR_DATE_MONTH_X = 182   # x for month value (centred under "(month)" label)
+HDR_DATE_DAY_X   = 223   # x for day value   (centred under "(day)"   label)
+HDR_DATE_YEAR_X  = 255   # x for year value  (centred under "(year)"  label)
 
-HDR_FROM_TO_Y    = 47    # y for From / To row
-HDR_FROM_X       = 38    # x for "from" value
-HDR_TO_X         = 263   # x for "to" value
+# From / To: values go on the same row as the printed "From:" / "To:" labels.
+#   "From:" label ends at x≈86 (y=40-43); "To:" label ends at x≈270 (y=40-43).
+HDR_FROM_TO_Y    = 41    # y for From / To row (same as the printed label row)
+HDR_FROM_X       = 90    # x for "from" value (just right of "From:" label)
+HDR_TO_X         = 278   # x for "to"   value (just right of "To:"   label)
 
 HDR_MILES_Y      = 72    # y for mileage row
 HDR_MILES_DRV_X  = 85    # x for "Total Miles Driving Today"
@@ -73,26 +77,37 @@ HDR_MILES_TOT_X  = 155   # x for "Total Mileage Today"
 HDR_TRUCK_X      = 63    # x for truck / trailer numbers
 HDR_TRUCK_Y      = 105   # y for truck / trailer numbers
 
-HDR_CARRIER_X    = 262   # x for carrier / office / terminal (right block)
-HDR_CARRIER_Y    = 61    # y for carrier name
-HDR_OFFICE_Y     = 74    # y for main office
-HDR_TERMINAL_Y   = 87    # y for home terminal
+# Right block (carrier / office / terminal): values sit ABOVE each printed underline.
+#   Carrier underline y=79, Office underline y=99, Terminal underline y=120.
+#   Right block starts at x=229; left-pad 5px → text starts at x=234.
+HDR_CARRIER_X    = 234   # x for carrier / office / terminal (right block)
+HDR_CARRIER_Y    = 68    # y for carrier name  (above underline at y=79)
+HDR_OFFICE_Y     = 88    # y for main office   (above underline at y=99)
+HDR_TERMINAL_Y   = 109   # y for home terminal (above underline at y=120)
 
 # ── Hours column (right of grid, x=493–512 in the 513px template) ──────────────
 HOURS_COL_X      = 493   # left edge of hours text (20 px available)
 HOURS_FONT_SIZE  = 6     # small enough for "H:MM" to fit in 20 px
 
 # ── Remarks section ────────────────────────────────────────────────────────────
+# Keep the drop-line and diagonal flag short so the rotated text starts
+# immediately next to the flag line (avoids large blank gaps).
 REMARKS_BASE_Y       = 262   # y where vertical drop-lines land
-REMARKS_FLAG_DX      = 18    # diagonal x-offset of flag line
-REMARKS_FLAG_DY      = 25    # diagonal y-offset of flag line
-REMARKS_TEXT_SIZE    = 10    # font size for rotated remarks text (readable)
+REMARKS_FLAG_DX      = 10    # diagonal x-offset of flag line (was 18 – reduced)
+REMARKS_FLAG_DY      = 12    # diagonal y-offset of flag line (was 25 – reduced)
+REMARKS_TEXT_SIZE    = 7     # font size for rotated remarks text (was 10 – reduced to prevent overlap)
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
+# Layout at TOTALS_Y (y≈346, in the Remarks free-write area):
+#   "Driving: H:MM"            starts at TOTALS_DRV_X  (≈57px wide at 8pt)
+#   "On Duty (not driving):…"  starts at TOTALS_DUTY_X (≈108px wide at 8pt)
+#   Circled total value         starts at TOTALS_SUM_X
+# Widths: driving≈57px, gap≈10, on-duty≈108px → on-duty ends ≈x=278
+# Place total at x=270 so the whole group fits within 513px.
 TOTALS_Y         = 346   # y of the summary row
 TOTALS_DRV_X     = 60    # x for "Driving: ..." label
 TOTALS_DUTY_X    = 160   # x for "On Duty (not driving): ..." label
-TOTALS_SUM_X     = 355   # x for total value + circle
+TOTALS_SUM_X     = 295   # x for total value + circle (was 355 – moved left)
 
 # Red circle around the on-duty total: centred on the number
 TOTAL_CIRCLE_PAD_X = 8   # horizontal padding inside circle
