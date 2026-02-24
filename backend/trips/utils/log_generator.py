@@ -25,8 +25,9 @@ from django.conf import settings
 
 # ── Grid constants ─────────────────────────────────────────────────────────────
 GRID_LEFT = 56          # x pixel for midnight (hour 0)
-GRID_RIGHT = 491        # x pixel for midnight (hour 24)
-GRID_WIDTH = GRID_RIGHT - GRID_LEFT   # 435 pixels = 24 hours
+GRID_RIGHT = 465        # x pixel where drawn status lines end (was 491 – shortened
+                        #   to create space for the hours column at HOURS_COL_X)
+GRID_WIDTH = GRID_RIGHT - GRID_LEFT   # pixels = 24 hours
 
 # Duty-status row centre Y positions
 ROW_Y = {
@@ -59,14 +60,14 @@ CIRCLE_WIDTH  = 2   # thickness of the red total-hours circle
 # ── Header field positions ─────────────────────────────────────────────────────
 # Date: input values sit ABOVE the underline at y=19, centred under each sub-label.
 #   "(month)" sub-label centre x≈187, "(day)" centre x≈227, "(year)" centre x≈271.
-HDR_DATE_Y       = 12    # y for date values (above the printed underline at y=19)
+HDR_DATE_Y       = 7     # y for date values (pushed further above underline at y=19)
 HDR_DATE_MONTH_X = 182   # x for month value (centred under "(month)" label)
 HDR_DATE_DAY_X   = 223   # x for day value   (centred under "(day)"   label)
 HDR_DATE_YEAR_X  = 255   # x for year value  (centred under "(year)"  label)
 
 # From / To: values go on the same row as the printed "From:" / "To:" labels.
 #   "From:" label ends at x≈86 (y=40-43); "To:" label ends at x≈270 (y=40-43).
-HDR_FROM_TO_Y    = 41    # y for From / To row (same as the printed label row)
+HDR_FROM_TO_Y    = 37    # y for From / To row (pushed up above the label text)
 HDR_FROM_X       = 90    # x for "from" value (just right of "From:" label)
 HDR_TO_X         = 278   # x for "to"   value (just right of "To:"   label)
 
@@ -85,17 +86,21 @@ HDR_CARRIER_Y    = 68    # y for carrier name  (above underline at y=79)
 HDR_OFFICE_Y     = 88    # y for main office   (above underline at y=99)
 HDR_TERMINAL_Y   = 109   # y for home terminal (above underline at y=120)
 
-# ── Hours column (right of grid, x=493–512 in the 513px template) ──────────────
-HOURS_COL_X      = 493   # left edge of hours text (20 px available)
-HOURS_FONT_SIZE  = 6     # small enough for "H:MM" to fit in 20 px
+# ── Hours column ───────────────────────────────────────────────────────────────
+# The grid lines are drawn from GRID_LEFT to GRID_RIGHT. By stopping the lines
+# at x=465 (rather than the pre-printed right border at x=491) we create a
+# 26 px gap that lets the hours text sit visibly away from the right edge.
+# HOURS_COL_X is placed just after GRID_RIGHT so the values appear in that gap.
+HOURS_COL_X      = 467   # left edge of hours text (was 493 – moved left)
+HOURS_FONT_SIZE  = 6     # small enough for "H:MM" to fit in available space
 
 # ── Remarks section ────────────────────────────────────────────────────────────
 # Keep the drop-line and diagonal flag short so the rotated text starts
 # immediately next to the flag line (avoids large blank gaps).
-REMARKS_BASE_Y       = 262   # y where vertical drop-lines land
-REMARKS_FLAG_DX      = 10    # diagonal x-offset of flag line (was 18 – reduced)
-REMARKS_FLAG_DY      = 12    # diagonal y-offset of flag line (was 25 – reduced)
-REMARKS_TEXT_SIZE    = 7     # font size for rotated remarks text (was 10 – reduced to prevent overlap)
+REMARKS_BASE_Y       = 255   # y where vertical drop-lines land (was 262 – pulled up)
+REMARKS_FLAG_DX      = 10    # diagonal x-offset of flag line
+REMARKS_FLAG_DY      = 12    # diagonal y-offset of flag line
+REMARKS_TEXT_SIZE    = 6     # font size for rotated remarks text (reduced to prevent overlap)
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Layout at TOTALS_Y (y≈346, in the Remarks free-write area):
