@@ -111,18 +111,26 @@ REMARKS_LINE_SPACING     = 3     # extra px between lines when estimating text b
 REMARKS_TEXT_PADDING     = 2     # extra px padding added to text block height estimate
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
-# Layout at TOTALS_Y (y≈346, in the Remarks free-write area):
-#   "Driving: H:MM"            starts at TOTALS_DRV_X  → ends ≈x+57
-#   "On Duty (not driving):…"  starts at TOTALS_DUTY_X → ends ≈x+108
-#   Circled total value         starts at TOTALS_SUM_X
+# Two-line layout in the Remarks free-write area (y≈326-400):
+#
+#   Line 1 (TOTALS_Y):
+#     "Driving: H:MM"            starts at TOTALS_DRV_X
+#     "On Duty (not driving):…"  starts at TOTALS_DUTY_X
+#
+#   Line 2 (TOTALS_TOTAL_Y):
+#     Circled total value         starts at TOTALS_SUM_X
+#
+# Placing the circle on its own line prevents the red ellipse from touching
+# the "On Duty" text (previously only 2 px apart) and moves it to the left
+# so it is clearly visible without competition from other text.
 #
 # The pre-printed "Shipping Documents:" label occupies x≈22–100 on the left.
-# Starting TOTALS_DRV_X at 130 clears that label; subsequent values are spaced
-# with a 10 px gap between each element.
-TOTALS_Y         = 346   # y of the summary row
+# Starting TOTALS_DRV_X at 130 clears that label.
+TOTALS_Y         = 346   # y of line 1: "Driving:" + "On Duty:" labels
 TOTALS_DRV_X     = 130   # x for "Driving: ..." label (right of "Shipping Documents:")
 TOTALS_DUTY_X    = 197   # x for "On Duty (not driving): ..." (10px gap after Driving ends)
-TOTALS_SUM_X     = 315   # x for total value + circle (10px gap after On Duty ends)
+TOTALS_TOTAL_Y   = 362   # y of line 2: circled total (16px below line 1)
+TOTALS_SUM_X     = 130   # x for circled total (left-aligned with "Driving:", clearly left)
 
 # Red circle around the on-duty total: centred on the number
 TOTAL_CIRCLE_PAD_X = 8   # horizontal padding inside circle
@@ -499,12 +507,16 @@ def _draw_bottom_totals(
     """
     Draw driving / on-duty breakdown and the total on-duty hours inside
     a prominent red circle, matching the reference log style.
+
+    Layout (two lines to prevent collision):
+      Line 1 (TOTALS_Y):       "Driving: H:MM    On Duty (not driving): H:MM"
+      Line 2 (TOTALS_TOTAL_Y): "[Total]"  (circled, left-aligned under "Driving:")
     """
     driving = totals.get("driving", 0.0)
     on_duty = totals.get("on_duty", 0.0)
     total   = driving + on_duty
 
-    # Labels
+    # Line 1 – Driving and On Duty labels
     draw.text((TOTALS_DRV_X,  TOTALS_Y),
               f"Driving: {_fmt_hours(driving)}",
               fill=TEXT_BLACK, font=font_md)
@@ -512,13 +524,13 @@ def _draw_bottom_totals(
               f"On Duty (not driving): {_fmt_hours(on_duty)}",
               fill=TEXT_BLACK, font=font_md)
 
-    # Total value (e.g. "10.5")
+    # Line 2 – Circled total value (left-aligned, own line, no collision risk)
     total_str = f"{total:.1f}"
-    draw.text((TOTALS_SUM_X, TOTALS_Y), total_str,
+    draw.text((TOTALS_SUM_X, TOTALS_TOTAL_Y), total_str,
               fill=TEXT_BLACK, font=font_lg)
 
     # Red circle around the total number
-    bbox = draw.textbbox((TOTALS_SUM_X, TOTALS_Y), total_str, font=font_lg)
+    bbox = draw.textbbox((TOTALS_SUM_X, TOTALS_TOTAL_Y), total_str, font=font_lg)
     cx0 = bbox[0] - TOTAL_CIRCLE_PAD_X
     cy0 = bbox[1] - TOTAL_CIRCLE_PAD_Y
     cx1 = bbox[2] + TOTAL_CIRCLE_PAD_X
