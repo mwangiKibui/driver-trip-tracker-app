@@ -20,6 +20,7 @@ Grid coordinate reference (confirmed by pixel analysis):
 
 import io
 import base64
+import textwrap
 from PIL import Image, ImageDraw, ImageFont
 from django.conf import settings
 
@@ -100,7 +101,8 @@ HOURS_FONT_SIZE  = 6     # small enough for "H:MM" to fit in available space
 REMARKS_BASE_Y       = 255   # y where vertical drop-lines land (was 262 – pulled up)
 REMARKS_FLAG_DX      = 10    # diagonal x-offset of flag line
 REMARKS_FLAG_DY      = 12    # diagonal y-offset of flag line
-REMARKS_TEXT_SIZE    = 6     # font size for rotated remarks text (reduced to prevent overlap)
+REMARKS_TEXT_SIZE    = 5     # font size for rotated remarks text (small to prevent overlap)
+REMARKS_WRAP_CHARS   = 12    # max chars per line before word-wrapping
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Layout at TOTALS_Y (y≈346, in the Remarks free-write area):
@@ -167,6 +169,71 @@ def _fmt_hours(h: float) -> str:
 def _truncate(text: str, max_chars: int) -> str:
     """Truncate text to max_chars, appending '…' if needed."""
     return text if len(text) <= max_chars else text[:max_chars - 1] + "\u2026"
+
+
+# US state name → 2-letter abbreviation (used to shorten location strings)
+_STATE_ABBREVS = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
+    "California": "CA", "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE",
+    "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID",
+    "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
+    "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS",
+    "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+    "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK",
+    "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT",
+    "Vermont": "VT", "Virginia": "VA", "Washington": "WA", "West Virginia": "WV",
+    "Wisconsin": "WI", "Wyoming": "WY", "District of Columbia": "DC",
+}
+
+
+def _abbrev_location(text: str) -> str:
+    """
+    Shorten a location string to 'City, ST' format.
+
+    Input formats handled:
+      - 'City, County, State'  → 'City, ST'
+      - 'City, State'          → 'City, ST'
+      - 'City'                 → 'City' (truncated to 15 chars if needed)
+
+    The county segment (middle part) is dropped entirely.
+    State names are converted to 2-letter abbreviations.
+    """
+    if not text:
+        return text
+    parts = [p.strip() for p in text.split(",")]
+    city = parts[0].strip()
+    state_abbrev = ""
+    for part in reversed(parts[1:]):
+        part_clean = part.strip()
+        if part_clean in _STATE_ABBREVS:
+            state_abbrev = _STATE_ABBREVS[part_clean]
+            break
+        if part_clean in _STATE_ABBREVS.values():
+            # Already a 2-letter abbreviation
+            state_abbrev = part_clean
+            break
+    if state_abbrev:
+        return f"{city}, {state_abbrev}"
+    # No recognisable state: return city truncated to 15 chars
+    return city[:15]
+
+
+def _wrap_remark(text: str) -> str:
+    """
+    Wrap a remark string at REMARKS_WRAP_CHARS characters per line.
+
+    Short words are kept together; long single words that exceed the limit
+    are left on their own line rather than broken mid-word.
+    Returns the wrapped text with newline separators.
+    """
+    if not text:
+        return text
+    lines = textwrap.wrap(text, width=REMARKS_WRAP_CHARS, break_long_words=False,
+                          break_on_hyphens=True)
+    return "\n".join(lines) if lines else text
 
 
 def _image_to_base64(img: Image.Image) -> str:
@@ -390,7 +457,10 @@ def _draw_remarks_flags(
                   fill=LINE_COLOR, width=1)
 
         # 3. Rotated text (black, readable size)
-        text_parts = [p for p in (location, remark) if p]
+        # Abbreviate location to 'City, ST' and wrap remark at REMARKS_WRAP_CHARS
+        loc_short      = _abbrev_location(location)
+        remark_wrapped = _wrap_remark(remark)
+        text_parts = [p for p in (loc_short, remark_wrapped) if p]
         if text_parts:
             _paste_rotated_text(
                 img,
