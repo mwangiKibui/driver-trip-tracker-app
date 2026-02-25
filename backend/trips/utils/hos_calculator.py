@@ -6,7 +6,7 @@ Rules applied:
 - 14-hour on-duty window per shift
 - 30-minute break required after 8 hours cumulative driving
 - 10-hour mandatory rest between shifts (spent in sleeper berth, Line 2)
-- 70-hour / 8-day cycle limit
+- 70-hour / 8-day cycle limit; 34-hour restart resets the cycle
 - End of day: post-trip TIV (on-duty, 30 min) followed by sleeper berth (Line 2)
 """
 
@@ -14,7 +14,9 @@ DRIVE_LIMIT_HRS = 11.0       # Max driving hours per shift
 DUTY_WINDOW_HRS = 14.0       # Max on-duty window hours per shift
 BREAK_AFTER_HRS = 8.0        # Hours of driving before mandatory 30-min break
 BREAK_DURATION_HRS = 0.5     # 30-minute mandatory break
-REST_DURATION_HRS = 10.0     # Minimum off-duty between shifts
+REST_DURATION_HRS = 10.0     # Minimum off-duty between shifts (sleeper berth)
+CYCLE_LIMIT_HRS = 70.0       # 70-hr/8-day cycle limit (FMCSA §395.3)
+RESTART_DURATION_HRS = 34.0  # 34-hour restart resets the 70-hr cycle
 PRE_TRIP_HRS = 0.5           # Pre-trip inspection duration
 POST_TRIP_HRS = 0.5          # Post-trip inspection duration
 LOADING_HRS = 0.5            # Loading/unloading duration at stops
@@ -101,7 +103,7 @@ def build_trip_schedule(
     days = []
     day_num = 0
     current_time = start_hour  # Time within current day (hours)
-    cycle_used = current_cycle_used_hrs
+    cycle_used = current_cycle_used_hrs  # Hours used in 70-hr/8-day cycle
 
     # Shift tracking
     shift_drive_hrs = 0.0      # Driving hours in current shift
@@ -138,6 +140,7 @@ def build_trip_schedule(
     shift_start_time = current_time
     current_time += PRE_TRIP_HRS
     shift_duty_hrs += PRE_TRIP_HRS
+    cycle_used += PRE_TRIP_HRS
 
     # Switch to driving
     def needs_rest():
@@ -147,11 +150,16 @@ def build_trip_schedule(
             or shift_duty_hrs >= DUTY_WINDOW_HRS
         )
 
+    def needs_cycle_restart():
+        """Check if driver has hit the 70-hr/8-day cycle limit."""
+        return cycle_used >= CYCLE_LIMIT_HRS
+
     def time_to_next_rest():
         """Hours of driving remaining before mandatory rest."""
         drive_remaining = DRIVE_LIMIT_HRS - shift_drive_hrs
         window_remaining = DUTY_WINDOW_HRS - shift_duty_hrs
-        return min(drive_remaining, window_remaining)
+        cycle_remaining = max(0.0, CYCLE_LIMIT_HRS - cycle_used)
+        return min(drive_remaining, window_remaining, cycle_remaining)
 
     def do_rest(day, t, loc):
         """Record 10-hour rest period, possibly spanning midnight."""
@@ -183,6 +191,43 @@ def build_trip_schedule(
         shift_duty_hrs = 0.0
         drive_since_break = 0.0
         shift_start_time = None
+        return day, ct
+
+    def do_restart(day, t, loc):
+        """
+        Record 34-hour restart to reset the 70-hr/8-day cycle.
+        Driver is in sleeper berth (Line 2) for the full 34 hours.
+        After restart, cycle_used resets to 0.
+        """
+        nonlocal current_time, day_num, current_day, shift_drive_hrs
+        nonlocal shift_duty_hrs, drive_since_break, shift_start_time, cycle_used
+
+        add_event(day, t, "sleeper_berth", loc, "34-hr restart")
+        restart_remaining = RESTART_DURATION_HRS
+        ct = t
+
+        while restart_remaining > 0:
+            time_left_in_day = 24.0 - ct
+            if restart_remaining <= time_left_in_day:
+                ct += restart_remaining
+                restart_remaining = 0
+            else:
+                if ct < 24.0:
+                    days.append(day)
+                day_num += 1
+                day = start_new_day(day_num)
+                add_event(day, 0, "sleeper_berth", loc, "")
+                restart_remaining -= time_left_in_day
+                ct = 0.0
+
+        current_day = day
+        current_time = ct
+        # Reset all shift counters AND the 70-hr cycle
+        shift_drive_hrs = 0.0
+        shift_duty_hrs = 0.0
+        drive_since_break = 0.0
+        shift_start_time = None
+        cycle_used = 0.0
         return day, ct
 
     seg_idx = 0
@@ -244,6 +289,7 @@ def build_trip_schedule(
                 current_time += drive_chunk
                 shift_drive_hrs += drive_chunk
                 shift_duty_hrs += drive_chunk
+                cycle_used += drive_chunk
                 drive_since_break += drive_chunk
                 drive_hours_remaining -= drive_chunk
                 miles_driven = seg_miles * (drive_chunk / seg["hours"]) if seg["hours"] > 0 else 0
@@ -277,25 +323,33 @@ def build_trip_schedule(
                               current_location_name, "Fuel stop")
                     current_time += FUELING_HRS
                     shift_duty_hrs += FUELING_HRS
+                    cycle_used += FUELING_HRS
                     miles_since_fuel = 0.0
                     add_event(current_day, current_time, "driving", current_location_name, "")
                     continue
 
                 # Check mandatory rest (only if there is more driving to do)
-                if needs_rest():
+                if needs_rest() or needs_cycle_restart():
                     if drive_hours_remaining <= 0.001:
                         # Driving complete – let the next segment handle the rest
                         break
-                    current_day, current_time = do_rest(
-                        current_day, current_time, current_location_name
-                    )
+                    if needs_cycle_restart():
+                        # 34-hour restart required to reset 70-hr cycle
+                        current_day, current_time = do_restart(
+                            current_day, current_time, current_location_name
+                        )
+                    else:
+                        current_day, current_time = do_rest(
+                            current_day, current_time, current_location_name
+                        )
                     shift_start_time = None
-                    # Resume driving after rest
+                    # Resume driving after rest/restart
                     add_event(current_day, current_time, "on_duty",
                               current_location_name, "Pre-trip inspection")
                     shift_start_time = current_time
                     current_time += PRE_TRIP_HRS
                     shift_duty_hrs += PRE_TRIP_HRS
+                    cycle_used += PRE_TRIP_HRS
                     add_event(current_day, current_time, "driving", current_location_name, "")
                     continue
 
@@ -311,6 +365,7 @@ def build_trip_schedule(
             add_event(current_day, current_time, "on_duty", loc, remark)
             current_time += stop_hrs
             shift_duty_hrs += stop_hrs
+            cycle_used += stop_hrs
 
             if shift_start_time is None:
                 shift_start_time = current_time - stop_hrs
@@ -325,8 +380,13 @@ def build_trip_schedule(
 
             current_location_name = loc
 
-            # After completing the stop, take rest if needed
-            if needs_rest():
+            # After completing the stop, take rest/restart if needed
+            if needs_cycle_restart():
+                current_day, current_time = do_restart(
+                    current_day, current_time, current_location_name
+                )
+                shift_start_time = None
+            elif needs_rest():
                 current_day, current_time = do_rest(
                     current_day, current_time, current_location_name
                 )
@@ -335,7 +395,12 @@ def build_trip_schedule(
             seg_idx += 1
 
     # Post-trip inspection
-    if needs_rest():
+    if needs_cycle_restart():
+        current_day, current_time = do_restart(
+            current_day, current_time, current_location_name
+        )
+        shift_start_time = None
+    elif needs_rest():
         current_day, current_time = do_rest(
             current_day, current_time, current_location_name
         )
@@ -345,6 +410,7 @@ def build_trip_schedule(
               current_location_name, "Post-trip inspection")
     current_time += POST_TRIP_HRS
     shift_duty_hrs += POST_TRIP_HRS
+    cycle_used += POST_TRIP_HRS
 
     # Handle midnight crossing after post-trip inspection
     if current_time >= 24.0:
