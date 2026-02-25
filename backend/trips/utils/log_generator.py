@@ -114,13 +114,19 @@ HOURS_COL_X      = GRID_CANVAS_W + 8   # 758 px – well to the right of GRID_RI
 HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger canvas scale
 
 # ── Remarks section ────────────────────────────────────────────────────────────
-REMARKS_BASE_Y           = _s(255)  # y where vertical drop-lines end
-REMARKS_TEXT_SIZE        = 6        # font size for rotated remarks text
+REMARKS_BASE_Y           = _s(255)  # y where vertical drop-lines end (≈373)
+REMARKS_TEXT_SIZE        = 5        # font size for rotated remarks text
 REMARKS_WRAP_CHARS       = 14       # max chars per line before word-wrapping
-REMARKS_MIN_TEXT_SPACING = _s(30)   # ≈ 44 px – min x-gap between text labels
+REMARKS_MIN_TEXT_SPACING = _s(36)   # ≈ 53 px – min x-gap between labels at the same Y level
 REMARKS_LINE_SPACING     = 3        # extra px between lines in height estimate
 REMARKS_TEXT_PADDING     = 2        # extra px padding added to height estimate
 REMARKS_ANGLE            = -45      # rotation angle for remarks text (degrees)
+
+# Two Y levels for staggering remarks labels so every remark is rendered even
+# when events are close together in time.  Level 0 is used first; when it is
+# occupied (previous label too close on the x-axis), level 1 is used instead.
+# The 68-px gap between levels prevents the diagonal text blocks from colliding.
+REMARKS_Y_LEVELS = [REMARKS_BASE_Y + 3, REMARKS_BASE_Y + 68]  # [376, 441]
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Two-line layout in the remarks free-write area:
@@ -449,16 +455,18 @@ def _draw_remarks_flags(
     For each duty-status change that has a remark or new location, draw:
       1. A short vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
       2. A short horizontal tick at REMARKS_BASE_Y to mark the exact time.
-      3. Vertical text (top-to-bottom, angle=-90°) centred on the flag x,
-         starting just below REMARKS_BASE_Y and flowing downward into the
-         remarks area.  Text is abbreviated and word-wrapped so each line is
-         at most REMARKS_WRAP_CHARS characters wide.
+      3. Diagonal text (-45°) placed at one of REMARKS_Y_LEVELS so that every
+         label is visible and nothing is silently dropped.
 
-    Labels that would overlap a previous label (x distance < REMARKS_MIN_TEXT_SPACING)
-    have their text suppressed; the drop-line and tick are still drawn so the
-    grid remains accurate.
+    Staggering strategy: two Y levels (top and bottom).  Level 0 is tried first;
+    if the previous label at level 0 is within REMARKS_MIN_TEXT_SPACING pixels
+    on the x-axis, level 1 is used instead.  If both levels are occupied, the
+    label is drawn at whichever level has the most horizontal room, accepting a
+    slight overlap over complete loss of information.
     """
-    last_text_x = None   # None = no label drawn yet; ensures first flag always renders
+    # Track the last x position at which text was drawn for each Y level.
+    # Initialise far to the left so the first label always qualifies at level 0.
+    last_x_per_level = [-REMARKS_MIN_TEXT_SPACING * 2] * len(REMARKS_Y_LEVELS)
 
     for i, ev in enumerate(sorted_events):
         remark   = ev.get("remark",   "").strip()
@@ -482,23 +490,35 @@ def _draw_remarks_flags(
         draw.line([(x - 3, REMARKS_BASE_Y), (x + 3, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
-        # 3. Vertical text (-90° = top-to-bottom), suppressed if too close to previous
-        too_close = last_text_x is not None and abs(x - last_text_x) < REMARKS_MIN_TEXT_SPACING
-        if not too_close:
-            loc_short      = _abbrev_location(location)
-            remark_wrapped = _wrap_remark(remark)
-            text_parts     = [p for p in (loc_short, remark_wrapped) if p]
-            if text_parts:
-                text_str = "\n".join(text_parts)
-                # Estimate original text block height (becomes rendered width after -90°
-                # rotation) so we can centre the label horizontally on the flag x.
-                n_lines    = text_str.count("\n") + 1
-                line_px    = REMARKS_TEXT_SIZE + REMARKS_LINE_SPACING
-                est_height = n_lines * line_px + REMARKS_TEXT_PADDING
-                text_x = x - est_height // 2   # centre label on flag x
-                text_y = REMARKS_BASE_Y + 3     # start just below the tick mark
-                _paste_rotated_text(img, text_str, text_x, text_y, font, REMARKS_ANGLE)
-                last_text_x = x
+        # 3. Diagonal text staggered across Y levels — no label is ever suppressed.
+        loc_short      = _abbrev_location(location)
+        remark_wrapped = _wrap_remark(remark)
+        text_parts     = [p for p in (loc_short, remark_wrapped) if p]
+        if not text_parts:
+            continue
+
+        text_str = "\n".join(text_parts)
+
+        # Choose the first level with enough horizontal room from its last label.
+        # If all levels are occupied, fall back to the one with the most room so
+        # the remark is always rendered (best-effort: avoids silent data loss).
+        chosen_level = None
+        for lvl in range(len(REMARKS_Y_LEVELS)):
+            if abs(x - last_x_per_level[lvl]) >= REMARKS_MIN_TEXT_SPACING:
+                chosen_level = lvl
+                break
+        if chosen_level is None:
+            chosen_level = max(range(len(REMARKS_Y_LEVELS)),
+                               key=lambda l: abs(x - last_x_per_level[l]))
+
+        text_y = REMARKS_Y_LEVELS[chosen_level]
+        n_lines    = text_str.count("\n") + 1
+        line_px    = REMARKS_TEXT_SIZE + REMARKS_LINE_SPACING
+        est_height = n_lines * line_px + REMARKS_TEXT_PADDING
+        text_x     = x - est_height // 2   # centre label on flag x
+
+        _paste_rotated_text(img, text_str, text_x, text_y, font, REMARKS_ANGLE)
+        last_x_per_level[chosen_level] = x
 
 
 def _draw_bottom_totals(
