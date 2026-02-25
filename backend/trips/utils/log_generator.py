@@ -23,6 +23,13 @@ Grid coordinate reference (original template pixels → scaled output pixels):
   - Sleeper Berth:   209 → ROW_Y["sleeper_berth"] ≈ 306
   - Driving:         226 → ROW_Y["driving"]       ≈ 330
   - On Duty (not):   243 → ROW_Y["on_duty"]       ≈ 355
+
+Remarks layout:
+  - REMARKS_BASE_Y ≈ 373: drop-lines end + diagonal tick starts here
+  - REMARKS_Y_LEVELS = [378, 463]: two stagger bands 90 px apart
+  - Level 0 uses REMARKS_ANGLE=-45° (gentle diagonal)
+  - Level 1 uses REMARKS_ANGLE_ALT=-70° (steeper/"writing downward")
+  - Totals drawn below level-1 text at y≈550 / y≈575
 """
 
 import io
@@ -115,30 +122,34 @@ HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger can
 
 # ── Remarks section ────────────────────────────────────────────────────────────
 REMARKS_BASE_Y           = _s(255)  # y where vertical drop-lines end (≈373)
-REMARKS_TEXT_SIZE        = 5        # font size for rotated remarks text
-REMARKS_WRAP_CHARS       = 14       # max chars per line before word-wrapping
-REMARKS_MIN_TEXT_SPACING = _s(36)   # ≈ 53 px – min x-gap between labels at the same Y level
+REMARKS_TEXT_SIZE        = 7        # font size for rotated remarks text (readable at 850px canvas)
+REMARKS_WRAP_CHARS       = 10       # max chars per line before word-wrapping (narrow blocks)
+REMARKS_MIN_TEXT_SPACING = _s(44)   # ≈ 64 px – min x-gap between labels at the same Y level
 REMARKS_LINE_SPACING     = 3        # extra px between lines in height estimate
 REMARKS_TEXT_PADDING     = 2        # extra px padding added to height estimate
-REMARKS_ANGLE            = -45      # rotation angle for remarks text (degrees)
+REMARKS_ANGLE            = -45      # rotation angle for level-0 remarks text (degrees)
+REMARKS_ANGLE_ALT        = -70      # steeper angle for level-1 labels ("writing downward")
+                                    # reduces horizontal footprint for dense schedules
 
 # Two Y levels for staggering remarks labels so every remark is rendered even
-# when events are close together in time.  Level 0 is used first; when it is
-# occupied (previous label too close on the x-axis), level 1 is used instead.
-# The 68-px gap between levels prevents the diagonal text blocks from colliding.
-REMARKS_Y_LEVELS = [REMARKS_BASE_Y + 3, REMARKS_BASE_Y + 68]  # [376, 441]
+# when events are close together in time (e.g. 30-min break = 14px x-gap).
+# Level 0 uses REMARKS_ANGLE (-45°); level 1 uses REMARKS_ANGLE_ALT (-70°, more
+# vertical) so the steeper text takes up less horizontal space and avoids overlap.
+# The 90-px gap between levels gives a comfortable visual separation.
+REMARKS_Y_LEVELS = [REMARKS_BASE_Y + 5, REMARKS_BASE_Y + 90]  # [378, 463]
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
-# Two-line layout in the remarks free-write area:
+# Two-line layout in the remarks free-write area, placed well BELOW the level-1
+# remarks text (which at font-7 / REMARKS_ANGLE_ALT extends to y≈521):
 #   Line 1 (TOTALS_Y):       "Driving: H:MM   On Duty (not driving): H:MM"
 #   Line 2 (TOTALS_TOTAL_Y): Circled total (own line, no collision risk)
 #
 # TOTALS_DRV_X is chosen to clear the pre-printed "Shipping Documents:" label
 # which originally occupies x≈22–100 (scaled to x≈32–146).
-TOTALS_Y         = _s(346)   # y of line 1
+TOTALS_Y         = _s(376)   # y of line 1 (≈550 px – below level-1 remarks)
 TOTALS_DRV_X     = _s(130)   # x for "Driving: ..." (right of pre-printed label)
 TOTALS_DUTY_X    = _s(197)   # x for "On Duty (not driving): ..."
-TOTALS_TOTAL_Y   = _s(362)   # y of line 2 (circled total)
+TOTALS_TOTAL_Y   = _s(393)   # y of line 2 (circled total, ≈575 px)
 TOTALS_SUM_X     = _s(130)   # x for circled total (left-aligned with "Driving:")
 
 # Red circle around the on-duty total
@@ -454,19 +465,24 @@ def _draw_remarks_flags(
     """
     For each duty-status change that has a remark or new location, draw:
       1. A short vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
-      2. A short horizontal tick at REMARKS_BASE_Y to mark the exact time.
-      3. Diagonal text (-45°) placed at one of REMARKS_Y_LEVELS so that every
-         label is visible and nothing is silently dropped.
+      2. A diagonal 45° tick at REMARKS_BASE_Y (the "thirty-degree flag line").
+      3. Rotated text placed at one of REMARKS_Y_LEVELS so that every label is
+         visible without suppression.
 
-    Staggering strategy: two Y levels (top and bottom).  Level 0 is tried first;
-    if the previous label at level 0 is within REMARKS_MIN_TEXT_SPACING pixels
-    on the x-axis, level 1 is used instead.  If both levels are occupied, the
-    label is drawn at whichever level has the most horizontal room, accepting a
-    slight overlap over complete loss of information.
+    Staggering strategy: two Y levels.
+      - Level 0 uses REMARKS_ANGLE (-45°): gentle diagonal, readable.
+      - Level 1 uses REMARKS_ANGLE_ALT (-70°): steeper/downward, narrower
+        horizontal footprint — avoids overlap for closely-spaced flags.
+    Level 0 is tried first; if its last label is within REMARKS_MIN_TEXT_SPACING
+    pixels on the x-axis, level 1 is used.  If both levels are occupied, the
+    label is drawn at whichever level has the most horizontal room so that no
+    remark is ever silently dropped.
     """
     # Track the last x position at which text was drawn for each Y level.
     # Initialise far to the left so the first label always qualifies at level 0.
     last_x_per_level = [-REMARKS_MIN_TEXT_SPACING * 2] * len(REMARKS_Y_LEVELS)
+    # Angles per level (level 0 = gentle diagonal, level 1 = steeper/downward)
+    angles = [REMARKS_ANGLE, REMARKS_ANGLE_ALT]
 
     for i, ev in enumerate(sorted_events):
         remark   = ev.get("remark",   "").strip()
@@ -486,14 +502,17 @@ def _draw_remarks_flags(
         draw.line([(x, ROW_BOTTOM[status]), (x, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
-        # 2. Short horizontal tick at REMARKS_BASE_Y to mark the time point
-        draw.line([(x - 3, REMARKS_BASE_Y), (x + 3, REMARKS_BASE_Y)],
+        # 2. Diagonal 45° tick at REMARKS_BASE_Y — the visual "thirty-degree line"
+        #    that marks the exact time point and points into the remarks area.
+        tick = 12  # px
+        draw.line([(x, REMARKS_BASE_Y), (x + tick, REMARKS_BASE_Y + tick)],
                   fill=LINE_COLOR, width=1)
 
-        # 3. Diagonal text staggered across Y levels — no label is ever suppressed.
+        # 3. Rotated text staggered across Y levels — no label is ever suppressed.
         loc_short      = _abbrev_location(location)
-        remark_wrapped = _wrap_remark(remark)
-        text_parts     = [p for p in (loc_short, remark_wrapped) if p]
+        loc_wrapped    = _wrap_remark(loc_short)   # e.g. "Milwaukee,\nWI"
+        remark_wrapped = _wrap_remark(remark)       # e.g. "30-min\nbreak"
+        text_parts     = [p for p in (loc_wrapped, remark_wrapped) if p]
         if not text_parts:
             continue
 
@@ -511,13 +530,14 @@ def _draw_remarks_flags(
             chosen_level = max(range(len(REMARKS_Y_LEVELS)),
                                key=lambda l: abs(x - last_x_per_level[l]))
 
-        text_y = REMARKS_Y_LEVELS[chosen_level]
+        angle      = angles[chosen_level]
+        text_y     = REMARKS_Y_LEVELS[chosen_level]
         n_lines    = text_str.count("\n") + 1
         line_px    = REMARKS_TEXT_SIZE + REMARKS_LINE_SPACING
         est_height = n_lines * line_px + REMARKS_TEXT_PADDING
-        text_x     = x - est_height // 2   # centre label on flag x
+        text_x     = x - est_height // 2   # roughly centre label on flag x
 
-        _paste_rotated_text(img, text_str, text_x, text_y, font, REMARKS_ANGLE)
+        _paste_rotated_text(img, text_str, text_x, text_y, font, angle)
         last_x_per_level[chosen_level] = x
 
 
