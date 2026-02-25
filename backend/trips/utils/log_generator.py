@@ -25,10 +25,12 @@ Grid coordinate reference (original template pixels → scaled output pixels):
   - On Duty (not):   243 → ROW_Y["on_duty"]       ≈ 355
 
 Brackets:
-  - For each on_duty period a 4-sided bracket (box) is drawn on the driving row:
-      Top bar:    ON the driving row — connects to adjacent driving line segments.
-      Arms:       descend BRACKET_ARM px below the driving row at each end.
-      Bottom bar: horizontal bar connecting both arm bottoms.
+  - For each on_duty period a U-shaped bracket (cup) is drawn in the REMARKS
+    area at REMARKS_BASE_Y — right where the vertical drop-lines end — so the
+    bracket is visually connected to the flag lines, not inside the grid rows.
+      Top bar:    horizontal line at REMARKS_BASE_Y spanning t_start → t_end.
+      Arms:       descend BRACKET_ARM px below the top bar at each end.
+      Bottom bar: horizontal line connecting both arm bottoms.
   - Line weight = LINE_WIDTH so the bracket is as prominent as the grid lines.
 
 Remarks layout:
@@ -155,14 +157,15 @@ REMARKS_ANGLE_NEAR = -10   # near-overlap: 10° from horizontal (nearly horizont
 
 # ── Bracket marks ──────────────────────────────────────────────────────────────
 # For on_duty (non-driving) periods the truck is stationary.  A bracket (cup)
-# mark ⌐...¬ is drawn on the driving row to visualise this.
-# The bracket has four sides:
-#   Top bar:    horizontal line ON the driving row between t_start and t_end —
-#               this explicitly connects the bracket to the driving row line so
-#               the cup appears "attached to the line" as the user expects.
-#   Arms:       short vertical lines descending from the driving row at each end.
+# mark ⌐...¬ is drawn in the remarks area (below the grid) for each such period.
+# The bracket is placed at REMARKS_BASE_Y — exactly where the vertical drop-lines
+# end — so the bracket is visually "connected to" and "hanging from" the flag lines.
+# The bracket has three sides (U / cup shape opening downward):
+#   Top bar:    horizontal line at REMARKS_BASE_Y spanning t_start → t_end —
+#               connects the two drop-lines and shows the stationary time span.
+#   Arms:       short vertical lines descending from the top bar at each end.
 #   Bottom bar: horizontal line connecting both arm bottoms.
-BRACKET_ARM = max(6, _s(12))  # depth of arms below driving row (px) — large enough to see clearly
+BRACKET_ARM = max(8, _s(14))  # depth of arms below REMARKS_BASE_Y (px)
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Two-line layout in the remarks free-write area, placed BELOW the remarks text
@@ -486,23 +489,23 @@ def _draw_brackets(
     sorted_events: list,
 ) -> None:
     """
-    Draw bracket (box) marks on the driving row for each on_duty period.
+    Draw U-shaped bracket (cup) marks in the REMARKS area for each on_duty period.
 
     During on_duty (non-driving work) periods the truck is stationary at a
-    location.  A bracket ⌐___¬ is drawn on the driving row to show this:
-      - Top bar:    horizontal line ON the driving row between t_start and t_end.
-                    This connects the bracket to adjacent driving-line segments so
-                    the cup is visually "attached to the line".
-      - Left  arm:  vertical line descending from the driving row at t_start.
-      - Right arm:  vertical line descending from the driving row at t_end.
+    location.  A bracket ⌐___¬ is drawn in the remarks area (below the grid)
+    at REMARKS_BASE_Y — exactly where the vertical drop-lines end — so the
+    bracket appears "connected to" and "hanging from" the flag lines:
+      - Top bar:    horizontal line at REMARKS_BASE_Y spanning t_start → t_end.
+      - Left  arm:  vertical line descending from the top bar at t_start.
+      - Right arm:  vertical line descending from the top bar at t_end.
       - Bottom bar: horizontal line connecting both arm bottoms.
 
     Line weight matches LINE_WIDTH so the bracket is as prominent as the grid.
     This matches the "bracket / cup" notation described in FMCSA logbook
     training: the bracket denotes the section of time the truck did not move.
     """
-    y_drive  = ROW_Y["driving"]
-    y_bottom = y_drive + BRACKET_ARM
+    y_top    = REMARKS_BASE_Y
+    y_bottom = y_top + BRACKET_ARM
 
     for i, ev in enumerate(sorted_events):
         if ev.get("status") != "on_duty":
@@ -517,12 +520,12 @@ def _draw_brackets(
         if x_end <= x_start + 2:   # too narrow to be visible
             continue
 
-        # Top bar: horizontal line on driving row — connects bracket to the line
-        draw.line([(x_start, y_drive), (x_end,   y_drive)],  fill=LINE_COLOR, width=LINE_WIDTH)
+        # Top bar: horizontal line at REMARKS_BASE_Y — connects to the drop-lines
+        draw.line([(x_start, y_top), (x_end,    y_top)],    fill=LINE_COLOR, width=LINE_WIDTH)
         # Left arm, right arm, bottom bar
-        draw.line([(x_start, y_drive), (x_start, y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
-        draw.line([(x_end,   y_drive), (x_end,   y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
-        draw.line([(x_start, y_bottom), (x_end,   y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+        draw.line([(x_start, y_top), (x_start,  y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+        draw.line([(x_end,   y_top), (x_end,    y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+        draw.line([(x_start, y_bottom), (x_end, y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
 
 
 def _draw_remarks_flags(
