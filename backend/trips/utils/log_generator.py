@@ -135,10 +135,12 @@ HDR_OFFICE_Y     = _s(88)    # y for main office address
 HDR_TERMINAL_Y   = _s(109)   # y for home terminal address
 
 # ── Hours column ───────────────────────────────────────────────────────────────
-# Positioned inside the pre-printed hours boxes which span GRID_RIGHT→GRID_CANVAS_W
-# (x≈718–750 at the scaled resolution).  Placing text at GRID_RIGHT+5 centres
-# the H:MM values inside those boxes.
-HOURS_COL_X      = GRID_RIGHT + 5      # ≈ 723 px – inside the template's hours boxes
+# The template's pre-printed hours boxes span GRID_RIGHT→GRID_CANVAS_W
+# (x≈718–750 at the scaled resolution).
+# The midnight dot is drawn with its RIGHT edge clamped to GRID_RIGHT (718),
+# so placing H:MM text at GRID_RIGHT+2 gives a 2px gap after the dot — the
+# hours values sit flush against the midnight border, clearly inside the boxes.
+HOURS_COL_X      = GRID_RIGHT + 2      # ≈ 720 px – just past midnight border, inside hours boxes
 HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger canvas scale
 
 # ── Remarks section ────────────────────────────────────────────────────────────
@@ -487,14 +489,18 @@ def _draw_grid_lines(
                 fill=DOT_COLOR,
             )
 
-    # Final dot at end of last segment (midnight)
+    # Final dot at end of last segment (midnight).
+    # The dot is drawn with its RIGHT edge at GRID_RIGHT so it never bleeds
+    # into the hours-column area (previous code used GRID_RIGHT + DOT_RADIUS
+    # which extended 4 px past the midnight border).
     if sorted_events:
         last_status = sorted_events[-1]["status"]
         last_status = last_status if last_status in ROW_Y else "off_duty"
         last_y = ROW_Y[last_status]
+        dot_cx = GRID_RIGHT - DOT_RADIUS   # right edge of dot = GRID_RIGHT exactly
         draw.ellipse(
-            [(GRID_RIGHT - DOT_RADIUS, last_y - DOT_RADIUS),
-             (GRID_RIGHT + DOT_RADIUS, last_y + DOT_RADIUS)],
+            [(dot_cx - DOT_RADIUS, last_y - DOT_RADIUS),
+             (dot_cx + DOT_RADIUS, last_y + DOT_RADIUS)],
             fill=DOT_COLOR,
         )
 
