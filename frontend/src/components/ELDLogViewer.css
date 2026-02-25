@@ -1,0 +1,180 @@
+.eld-viewer {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  margin-top: 24px;
+}
+
+.eld-viewer__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 4px;
+}
+
+.eld-viewer__subtitle {
+  font-size: 0.85rem;
+  color: #718096;
+  margin-bottom: 16px;
+}
+
+.eld-viewer__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.eld-viewer__tab {
+  padding: 6px 18px;
+  border-radius: 20px;
+  border: 1.5px solid #e2e8f0;
+  background: #f7fafc;
+  color: #4a5568;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.eld-viewer__tab:hover {
+  border-color: #2b6cb0;
+  color: #2b6cb0;
+}
+
+.eld-viewer__tab--active {
+  background: #2b6cb0;
+  border-color: #2b6cb0;
+  color: #fff;
+}
+
+.eld-viewer__log-wrapper {
+  text-align: center;
+  background: #f7fafc;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border: 1px solid #e2e8f0;
+  overflow: auto;
+}
+
+.eld-viewer__log-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  image-rendering: crisp-edges;
+  /* Scale up the small 513px template for readability */
+  min-width: min(100%, 900px);
+}
+
+.eld-viewer__totals {
+  background: #f7fafc;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.eld-viewer__total-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.eld-viewer__total-bar {
+  display: inline-block;
+  height: 8px;
+  border-radius: 4px;
+  min-width: 4px;
+  max-width: 200px;
+}
+
+.eld-viewer__total-label {
+  font-size: 0.82rem;
+  color: #4a5568;
+  min-width: 160px;
+}
+
+.eld-viewer__total-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #2d3748;
+  margin-left: auto;
+}
+
+.eld-viewer__total-combined {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.9rem;
+  color: #2d3748;
+  text-align: right;
+}
+
+/* Schedule table */
+.eld-schedule__day {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.eld-schedule__day-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #edf2f7;
+  border: none;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.eld-schedule__chevron {
+  font-size: 0.7rem;
+  color: #718096;
+}
+
+.eld-schedule__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.eld-schedule__table th {
+  background: #f7fafc;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #4a5568;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.eld-schedule__table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #f0f4f8;
+  color: #2d3748;
+}
+
+.eld-schedule__table tr:last-child td {
+  border-bottom: none;
+}
+
+.eld-schedule__badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}

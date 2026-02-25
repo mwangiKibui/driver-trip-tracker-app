@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+*.sqlite3
+backend/media/
+
+# Node / React
+frontend/node_modules/
+frontend/build/
+
+# OS
+.DS_Store
+*.log
