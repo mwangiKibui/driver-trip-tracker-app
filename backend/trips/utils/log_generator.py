@@ -224,8 +224,14 @@ def _load_bold_font(size: int = 7) -> ImageFont.FreeTypeFont:
 # ── Coordinate helpers ─────────────────────────────────────────────────────────
 
 def _time_to_x(hour_fraction: float) -> int:
-    """Convert fractional hours (0–24) to x pixel position on the grid."""
-    return int(round(GRID_LEFT + (hour_fraction / 24.0) * GRID_WIDTH))
+    """Convert fractional hours (0–24) to x pixel position on the grid.
+
+    The result is clamped to [GRID_LEFT, GRID_RIGHT] so that events with
+    time > 24.0 (e.g. caused by floating-point overshoot in the HOS
+    calculator) never produce a pixel beyond the midnight border.
+    """
+    x = GRID_LEFT + (hour_fraction / 24.0) * GRID_WIDTH
+    return int(round(max(GRID_LEFT, min(x, GRID_RIGHT))))
 
 
 def _fmt_hours(h: float) -> str:

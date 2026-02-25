@@ -346,6 +346,13 @@ def build_trip_schedule(
     current_time += POST_TRIP_HRS
     shift_duty_hrs += POST_TRIP_HRS
 
+    # Handle midnight crossing after post-trip inspection
+    if current_time >= 24.0:
+        days.append(current_day)
+        day_num += 1
+        current_day = start_new_day(day_num)
+        current_time = current_time - 24.0
+
     # Rest at end of trip — driver is in sleeper berth (Line 2)
     add_event(current_day, current_time, "sleeper_berth",
               current_location_name, "End of shift")
