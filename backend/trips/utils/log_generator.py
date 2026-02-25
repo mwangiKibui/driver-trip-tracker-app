@@ -4,10 +4,11 @@ ELD (Electronic Logging Device) Daily Log Generator.
 Draws driver daily log entries on the blank template image using PIL.
 
 Template image: files/template/blank-driver-log.png (513x518 pixels)
+Output canvas:  OUTPUT_WIDTH = 750 px (expanded right with white padding)
 
 Grid coordinate reference (confirmed by pixel analysis):
   - Grid left edge  (midnight start): GRID_LEFT  = 56
-  - Grid right edge (midnight end):   GRID_RIGHT = 491
+  - Grid right edge (midnight end):   GRID_RIGHT = 491  (template's printed border)
   - Grid width for 24 hours:          GRID_WIDTH = 435
   - Pixels per hour:                  435 / 24 ≈ 18.125
 
@@ -26,14 +27,16 @@ from django.conf import settings
 
 # ── Canvas ─────────────────────────────────────────────────────────────────────
 # The blank template is 513 px wide.  We expand the output canvas to OUTPUT_WIDTH
-# by padding with white on the right.  This gives the hours column and the
-# totals row more horizontal room without altering any grid coordinates.
-OUTPUT_WIDTH = 600      # final output image width (px)
+# by padding with white on the right.  This gives the hours column, the remarks
+# diagonal text, and the totals row more horizontal room without altering any
+# grid coordinates.
+OUTPUT_WIDTH = 750      # final output image width (px)
 
 # ── Grid constants ─────────────────────────────────────────────────────────────
-GRID_LEFT = 56          # x pixel for midnight (hour 0)
-GRID_RIGHT = 465        # x pixel where drawn status lines end (was 491 – shortened
-                        #   to create space for the hours column at HOURS_COL_X)
+GRID_LEFT  = 56         # x pixel for midnight (hour 0)
+GRID_RIGHT = 491        # x pixel for midnight (hour 24) – template's printed right border;
+                        #   status lines stop exactly here so they never bleed into the
+                        #   hours column (which lives in the expanded canvas area at x≥500)
 GRID_WIDTH = GRID_RIGHT - GRID_LEFT   # pixels = 24 hours
 
 # Duty-status row centre Y positions
@@ -94,21 +97,22 @@ HDR_OFFICE_Y     = 88    # y for main office   (above underline at y=99)
 HDR_TERMINAL_Y   = 109   # y for home terminal (above underline at y=120)
 
 # ── Hours column ───────────────────────────────────────────────────────────────
-# The grid lines are drawn from GRID_LEFT to GRID_RIGHT. By stopping the lines
-# at x=465 (rather than the pre-printed right border at x=491) we create a
-# 26 px gap that lets the hours text sit visibly away from the right edge.
-# HOURS_COL_X is placed just after GRID_RIGHT so the values appear in that gap.
-HOURS_COL_X      = 467   # left edge of hours text (was 493 – moved left)
-HOURS_FONT_SIZE  = 6     # small enough for "H:MM" to fit in available space
+# GRID_RIGHT = 491 is the template's printed midnight border.  HOURS_COL_X is
+# placed in the expanded canvas area (x > 513) so there is a clear visual gap
+# between the end of the grid line and the H:MM values.
+HOURS_COL_X      = 500   # left edge of hours text (in expanded canvas area)
+HOURS_FONT_SIZE  = 7     # font size for hours column values
 
 # ── Remarks section ────────────────────────────────────────────────────────────
 REMARKS_BASE_Y           = 255   # y where vertical drop-lines land
 REMARKS_TEXT_SIZE        = 5     # font size for rotated remarks text (small to prevent overlap)
-REMARKS_WRAP_CHARS       = 10    # max chars per line before word-wrapping
-REMARKS_MIN_TEXT_SPACING = 20    # min x-gap (px) between rendered text labels;
+REMARKS_WRAP_CHARS       = 12    # max chars per line before word-wrapping
+REMARKS_MIN_TEXT_SPACING = 30    # min x-gap (px) between rendered text labels;
                                  # labels closer than this are suppressed to avoid collision
 REMARKS_LINE_SPACING     = 3     # extra px between lines when estimating text block height
 REMARKS_TEXT_PADDING     = 2     # extra px padding added to text block height estimate
+REMARKS_ANGLE            = -45   # rotation angle for remarks text (degrees);
+                                 # -45 = diagonal top-left to bottom-right
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Two-line layout in the Remarks free-write area (y≈326-400):
@@ -494,7 +498,7 @@ def _draw_remarks_flags(
                 est_height = n_lines * line_px + REMARKS_TEXT_PADDING
                 text_x = x - est_height // 2   # centre label on flag x
                 text_y = REMARKS_BASE_Y + 3     # start just below the tick mark
-                _paste_rotated_text(img, text_str, text_x, text_y, font, -90)
+                _paste_rotated_text(img, text_str, text_x, text_y, font, REMARKS_ANGLE)
                 last_text_x = x
 
 
