@@ -25,13 +25,21 @@ Grid coordinate reference (original template pixels → scaled output pixels):
   - On Duty (not):   243 → ROW_Y["on_duty"]       ≈ 355
 
 Brackets:
-  - For each on_duty period a U-shaped bracket (cup) is drawn in the REMARKS
-    area at REMARKS_BASE_Y — right where the vertical drop-lines end — so the
-    bracket is visually connected to the flag lines, not inside the grid rows.
-      Top bar:    horizontal line at REMARKS_BASE_Y spanning t_start → t_end.
-      Arms:       descend BRACKET_ARM px below the top bar at each end.
-      Bottom bar: horizontal line connecting both arm bottoms.
-  - Line weight = LINE_WIDTH so the bracket is as prominent as the grid lines.
+  - For each on_duty (stationary) period a U-shaped bracket is drawn in the
+    REMARKS area.  The U opens UPWARD so the vertical drop-lines at x_start
+    and x_end form the tops of the bracket arms:
+
+        x_start           x_end
+           |                |      ← drop-lines end at REMARKS_BASE_Y
+           |                |      ← left/right arms descend BRACKET_ARM px
+           |________________|      ← bottom bar at REMARKS_BASE_Y + BRACKET_ARM
+                    |              ← central connector from midpoint (45°)
+                   /
+                 text (location + remark)
+
+  - Line weight = LINE_WIDTH so the bracket matches the grid line thickness.
+  - The text annotation is placed on the central diagonal line so the label
+    "moves with" the connector, exactly as in physical FMCSA logbook notation.
 
 Remarks layout:
   - REMARKS_BASE_Y ≈ 373: drop-lines end + diagonal tick starts here
@@ -485,24 +493,29 @@ def _draw_hours_column(
 
 
 def _draw_brackets(
+    img: Image.Image,
     draw: ImageDraw.ImageDraw,
     sorted_events: list,
+    font: ImageFont.FreeTypeFont,
 ) -> None:
     """
-    Draw U-shaped bracket (cup) marks in the REMARKS area for each on_duty period.
+    Draw a U-shaped bracket for each on_duty (stationary) period and attach
+    a diagonal remark line from the bracket's midpoint.
 
-    During on_duty (non-driving work) periods the truck is stationary at a
-    location.  A bracket ⌐___¬ is drawn in the remarks area (below the grid)
-    at REMARKS_BASE_Y — exactly where the vertical drop-lines end — so the
-    bracket appears "connected to" and "hanging from" the flag lines:
-      - Top bar:    horizontal line at REMARKS_BASE_Y spanning t_start → t_end.
-      - Left  arm:  vertical line descending from the top bar at t_start.
-      - Right arm:  vertical line descending from the top bar at t_end.
-      - Bottom bar: horizontal line connecting both arm bottoms.
+    The U opens UPWARD — the vertical drop-lines at x_start and x_end already
+    form the tops of the arms — so the bracket shape is:
 
-    Line weight matches LINE_WIDTH so the bracket is as prominent as the grid.
-    This matches the "bracket / cup" notation described in FMCSA logbook
-    training: the bracket denotes the section of time the truck did not move.
+        x_start           x_end
+           |                |      ← drop-lines end at REMARKS_BASE_Y (y_top)
+           |                |      ← left/right arms descend BRACKET_ARM px
+           |________________|      ← bottom bar at y_bottom
+                    |              ← central connector from midpoint (45°)
+                   /
+                 text              ← location + remark label
+
+    Line weight = LINE_WIDTH so the bracket matches the grid line thickness.
+    The text is placed at the diagonal tick endpoint so the label "moves with"
+    the connector, matching physical FMCSA logbook notation.
     """
     y_top    = REMARKS_BASE_Y
     y_bottom = y_top + BRACKET_ARM
@@ -512,7 +525,8 @@ def _draw_brackets(
             continue
 
         t_start = ev["time"]
-        t_end   = sorted_events[i + 1]["time"] if i + 1 < len(sorted_events) else 24.0
+        t_end   = (sorted_events[i + 1]["time"]
+                   if i + 1 < len(sorted_events) else 24.0)
 
         x_start = _time_to_x(t_start)
         x_end   = _time_to_x(t_end)
@@ -520,12 +534,29 @@ def _draw_brackets(
         if x_end <= x_start + 2:   # too narrow to be visible
             continue
 
-        # Top bar: horizontal line at REMARKS_BASE_Y — connects to the drop-lines
-        draw.line([(x_start, y_top), (x_end,    y_top)],    fill=LINE_COLOR, width=LINE_WIDTH)
-        # Left arm, right arm, bottom bar
-        draw.line([(x_start, y_top), (x_start,  y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
-        draw.line([(x_end,   y_top), (x_end,    y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
-        draw.line([(x_start, y_bottom), (x_end, y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+        # U-shape (3 sides, open at top): left arm, bottom bar, right arm
+        draw.line([(x_start, y_top),    (x_start, y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+        draw.line([(x_start, y_bottom), (x_end,   y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+        draw.line([(x_end,   y_top),    (x_end,   y_bottom)], fill=LINE_COLOR, width=LINE_WIDTH)
+
+        # Central diagonal connector from the midpoint of the bottom bar
+        x_mid   = (x_start + x_end) // 2
+        tick_x2 = x_mid + TICK_DEFAULT_DX
+        tick_y2 = y_bottom + TICK_DEFAULT_DY
+        draw.line([(x_mid, y_bottom), (tick_x2, tick_y2)],
+                  fill=LINE_COLOR, width=1)
+
+        # Remark text anchored at the tick endpoint
+        location = ev.get("location", "")
+        remark   = ev.get("remark",   "")
+        loc_short = _abbrev_location(location)
+        text_parts = [p for p in (_wrap_remark(loc_short), _wrap_remark(remark)) if p]
+        if text_parts:
+            _paste_rotated_text(
+                img, "\n".join(text_parts),
+                tick_x2, tick_y2,
+                font, REMARKS_ANGLE,
+            )
 
 
 def _draw_remarks_flags(
@@ -537,9 +568,12 @@ def _draw_remarks_flags(
     """
     For each duty-status change that has a remark or new location, draw:
       1. A vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
-      2. A diagonal tick at REMARKS_BASE_Y whose angle matches the text angle,
+      2. (non-on_duty only) A diagonal tick whose angle matches the text angle,
          so the label visually "moves with" the flag line.
-      3. Rotated text anchored at the tick endpoint.
+      3. (non-on_duty only) Rotated text anchored at the tick endpoint.
+
+    on_duty events only get the drop-line here; their tick + text are rendered
+    by _draw_brackets() which places the label at the bracket midpoint.
 
     Adaptive geometry (tick angle and text angle are always matched):
       - Default (x_gap ≥ MIN_SPACING):  45° tick + -45° text (gentle diagonal).
@@ -548,9 +582,9 @@ def _draw_remarks_flags(
         REMARKS_Y_STAGGER so the nearly-horizontal text blocks do not overlap.
       - No label is ever suppressed — all remarks are always rendered.
     """
-    last_x          = -REMARKS_MIN_TEXT_SPACING * 2
-    stagger_idx     = 0     # cycles through REMARKS_Y_OFFSETS for very-close labels
-    last_flagged_loc = ""   # last location that was printed; omit location if unchanged
+    last_x           = -REMARKS_MIN_TEXT_SPACING * 2
+    stagger_idx      = 0     # cycles through REMARKS_Y_OFFSETS for very-close labels
+    last_flagged_loc = ""    # last location that was printed; omit location if unchanged
 
     for i, ev in enumerate(sorted_events):
         remark   = ev.get("remark",   "").strip()
@@ -570,6 +604,12 @@ def _draw_remarks_flags(
         draw.line([(x, ROW_BOTTOM[status]), (x, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
+        # on_duty events: bracket (_draw_brackets) handles tick + text at midpoint
+        if status == "on_duty":
+            last_flagged_loc = _abbrev_location(location)
+            last_x = x
+            continue
+
         # 2. Diagonal tick — angle matches the text angle so label follows line
         x_gap = abs(x - last_x)
         if x_gap < REMARKS_MIN_TEXT_SPACING:
@@ -586,11 +626,11 @@ def _draw_remarks_flags(
         #    Only include the location line when the driver has moved to a new
         #    location since the last flagged event — repeating the same city name
         #    at consecutive stops wastes space and causes overlap.
-        loc_short   = _abbrev_location(location)
-        show_loc    = loc_short != last_flagged_loc   # True when location changed
-        loc_wrapped = _wrap_remark(loc_short) if show_loc else ""
+        loc_short      = _abbrev_location(location)
+        show_loc       = loc_short != last_flagged_loc   # True when location changed
+        loc_wrapped    = _wrap_remark(loc_short) if show_loc else ""
         remark_wrapped = _wrap_remark(remark)
-        text_parts  = [p for p in (loc_wrapped, remark_wrapped) if p]
+        text_parts     = [p for p in (loc_wrapped, remark_wrapped) if p]
         if not text_parts:
             last_flagged_loc = loc_short
             last_x = x
@@ -722,8 +762,8 @@ def generate_log_image(
     # Grid lines & dots
     _draw_grid_lines(draw, sorted_events)
 
-    # Bracket marks on driving row for on_duty (stationary truck) periods
-    _draw_brackets(draw, sorted_events)
+    # Bracket marks in remarks area for on_duty (stationary truck) periods
+    _draw_brackets(img, draw, sorted_events, font_rem)
 
     # Hours column
     from .hos_calculator import compute_daily_totals
