@@ -24,14 +24,18 @@ Grid coordinate reference (original template pixels → scaled output pixels):
   - Driving:         226 → ROW_Y["driving"]       ≈ 330
   - On Duty (not):   243 → ROW_Y["on_duty"]       ≈ 355
 
+Brackets:
+  - For each on_duty period, a bracket (cup ⌐...¬) is drawn on the driving row
+    to indicate the truck was stationary during that time.
+
 Remarks layout:
   - REMARKS_BASE_Y ≈ 373: drop-lines end + diagonal tick starts here
-  - REMARKS_TEXT_Y = REMARKS_BASE_Y + 5 ≈ 378: single Y anchor for ALL labels
-  - Adaptive angle — text inclines more steeply upward when flags are close,
-    so no label is pushed downward:
-      • x_gap ≥ MIN_SPACING        → REMARKS_ANGLE      = -45° (gentle diagonal)
-      • MIN_SPACING/2 ≤ x_gap < MIN_SPACING → REMARKS_ANGLE_NEAR = -70° (steeper)
-      • x_gap < MIN_SPACING/2     → REMARKS_ANGLE_STEEP = -85° (nearly vertical)
+  - Tick angle and text angle are matched so the label appears to "move with" the line:
+      • x_gap ≥ MIN_SPACING: 45° tick + -45° text (gentle diagonal)
+      • x_gap < MIN_SPACING:  10° tick + -10° text (nearly horizontal)
+  - Very-close labels (x_gap < MIN_SPACING/2) alternate Y by REMARKS_Y_STAGGER
+    so nearly-horizontal text blocks do not overlap.
+  - No label is ever suppressed.
   - Totals drawn below remarks area at y≈527 / y≈550
 """
 
@@ -125,19 +129,31 @@ HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger can
 
 # ── Remarks section ────────────────────────────────────────────────────────────
 REMARKS_BASE_Y           = _s(255)  # y where vertical drop-lines end (≈373)
-REMARKS_TEXT_Y           = REMARKS_BASE_Y + 5  # single Y anchor for ALL remarks labels (≈378)
 REMARKS_TEXT_SIZE        = 7        # font size for rotated remarks text (readable at 850px canvas)
 REMARKS_WRAP_CHARS       = 10       # max chars per line before word-wrapping (narrow blocks)
-REMARKS_MIN_TEXT_SPACING = _s(44)   # ≈ 64 px – threshold for angle-steepening
-REMARKS_LINE_SPACING     = 3        # extra px between lines in height estimate
-REMARKS_TEXT_PADDING     = 2        # extra px padding added to height estimate
+REMARKS_MIN_TEXT_SPACING = _s(44)   # ≈ 64 px – threshold for switching to near-overlap geometry
+# Three-level Y cycle for very-close labels (x_gap < MIN_SPACING/2 ≈32px).
+# Cycling over 3 distinct offsets prevents any two consecutive close labels
+# from sharing the same baseline even when 3+ events cluster together.
+REMARKS_Y_OFFSETS        = (0, 14, 28)  # Y offsets for 3-level stagger cycle (px)
 
-# Adaptive-angle constants — text inclines MORE STEEPLY when flags are close so
-# the text body rises upward into available space rather than pushing downward.
-# All labels anchor at REMARKS_TEXT_Y; only the rotation angle varies.
-REMARKS_ANGLE       = -45   # default: gentle diagonal (text goes up-right)
-REMARKS_ANGLE_NEAR  = -70   # moderately steep: x_gap < MIN_SPACING
-REMARKS_ANGLE_STEEP = -85   # nearly vertical: x_gap < MIN_SPACING / 2
+# Tick geometry — tick line direction matches the text angle so the label
+# appears to "move with" the diagonal line:
+#   Default (enough space): 45° tick  →  -45° text (gentle diagonal, text rises up-right)
+#   Near-overlap:           10° tick  →  -10° text (nearly horizontal, compact vertical footprint)
+TICK_DEFAULT_DX  = 12   # 45° tick: right component (px)
+TICK_DEFAULT_DY  = 12   # 45° tick: down  component (px)
+TICK_NEAR_DX     = 20   # ~10° tick: right component (tan10°≈0.18 → dy≈4)
+TICK_NEAR_DY     = 4    # ~10° tick: down  component (px)
+
+# Text rotation angles (PIL: negative = clockwise from horizontal)
+REMARKS_ANGLE      = -45   # default: 45° from horizontal (text rises up-right)
+REMARKS_ANGLE_NEAR = -10   # near-overlap: 10° from horizontal (nearly horizontal)
+
+# ── Bracket marks ──────────────────────────────────────────────────────────────
+# For on_duty (non-driving) periods the truck is stationary.  A bracket (cup)
+# mark ⌐...¬ is drawn on the driving row to visualise this.
+BRACKET_ARM = max(4, _s(4))  # depth of bracket arms below driving row centre (px)
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
 # Two-line layout in the remarks free-write area, placed BELOW the remarks text
@@ -456,6 +472,44 @@ def _draw_hours_column(
         draw.text((HOURS_COL_X, row_y - 4), text, fill=TEXT_BLACK, font=font)
 
 
+def _draw_brackets(
+    draw: ImageDraw.ImageDraw,
+    sorted_events: list,
+) -> None:
+    """
+    Draw bracket (cup) marks on the driving row for each on_duty period.
+
+    During on_duty (non-driving work) periods the truck is stationary at a
+    location.  A bracket ⌐...¬ is drawn on the driving row to show this:
+      - Left  arm: short vertical line down from the driving row at t_start.
+      - Right arm: short vertical line down from the driving row at t_end.
+      - Bottom bar: horizontal line connecting both arms.
+
+    This matches the "bracket / cup" notation described in FMCSA logbook
+    training: the bracket denotes the section of time the truck did not move.
+    """
+    y_drive  = ROW_Y["driving"]
+    y_bottom = y_drive + BRACKET_ARM
+
+    for i, ev in enumerate(sorted_events):
+        if ev.get("status") != "on_duty":
+            continue
+
+        t_start = ev["time"]
+        t_end   = sorted_events[i + 1]["time"] if i + 1 < len(sorted_events) else 24.0
+
+        x_start = _time_to_x(t_start)
+        x_end   = _time_to_x(t_end)
+
+        if x_end <= x_start + 2:   # too narrow to be visible
+            continue
+
+        # Left arm, right arm, bottom bar
+        draw.line([(x_start, y_drive), (x_start, y_bottom)], fill=LINE_COLOR, width=1)
+        draw.line([(x_end,   y_drive), (x_end,   y_bottom)], fill=LINE_COLOR, width=1)
+        draw.line([(x_start, y_bottom), (x_end,   y_bottom)], fill=LINE_COLOR, width=1)
+
+
 def _draw_remarks_flags(
     img: Image.Image,
     draw: ImageDraw.ImageDraw,
@@ -464,24 +518,21 @@ def _draw_remarks_flags(
 ) -> None:
     """
     For each duty-status change that has a remark or new location, draw:
-      1. A short vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
-      2. A diagonal 45° tick at REMARKS_BASE_Y (the "thirty-degree flag line").
-      3. Rotated text anchored at REMARKS_TEXT_Y, inclining more steeply upward
-         when consecutive flags are close together — so labels rise INTO the
-         available space above the baseline rather than being pushed downward.
+      1. A vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
+      2. A diagonal tick at REMARKS_BASE_Y whose angle matches the text angle,
+         so the label visually "moves with" the flag line.
+      3. Rotated text anchored at the tick endpoint.
 
-    Adaptive-angle strategy (single Y level):
-      - All labels anchor at REMARKS_TEXT_Y (= REMARKS_BASE_Y + 5).
-      - The rotation angle adapts based on horizontal distance to the previous
-        label on the same side:
-          x_gap ≥ MIN_SPACING        → REMARKS_ANGLE (-45°): gentle diagonal
-          MIN_SPACING/2 ≤ x_gap < MIN_SPACING → REMARKS_ANGLE_NEAR (-70°): moderately steep
-          x_gap < MIN_SPACING / 2   → REMARKS_ANGLE_STEEP (-85°): nearly vertical
-      - Steeper text has a smaller horizontal footprint, so the body rises higher
-        above the baseline and avoids colliding with its neighbour.
+    Adaptive geometry (tick angle and text angle are always matched):
+      - Default (x_gap ≥ MIN_SPACING):  45° tick + -45° text (gentle diagonal).
+      - Near    (x_gap < MIN_SPACING):  10° tick + -10° text (nearly horizontal).
+        Very-close labels (x_gap < MIN_SPACING/2) additionally alternate Y by
+        REMARKS_Y_STAGGER so the nearly-horizontal text blocks do not overlap.
       - No label is ever suppressed — all remarks are always rendered.
     """
-    last_x = -REMARKS_MIN_TEXT_SPACING * 2   # track last rendered label x position
+    last_x          = -REMARKS_MIN_TEXT_SPACING * 2
+    stagger_idx     = 0     # cycles through REMARKS_Y_OFFSETS for very-close labels
+    last_flagged_loc = ""   # last location that was printed; omit location if unchanged
 
     for i, ev in enumerate(sorted_events):
         remark   = ev.get("remark",   "").strip()
@@ -501,38 +552,48 @@ def _draw_remarks_flags(
         draw.line([(x, ROW_BOTTOM[status]), (x, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
-        # 2. Diagonal 45° tick at REMARKS_BASE_Y — the visual "thirty-degree line"
-        #    that marks the exact time point and points into the remarks area.
-        tick = 12  # px
-        draw.line([(x, REMARKS_BASE_Y), (x + tick, REMARKS_BASE_Y + tick)],
+        # 2. Diagonal tick — angle matches the text angle so label follows line
+        x_gap = abs(x - last_x)
+        if x_gap < REMARKS_MIN_TEXT_SPACING:
+            tick_dx, tick_dy = TICK_NEAR_DX, TICK_NEAR_DY
+            angle = REMARKS_ANGLE_NEAR     # -10°: nearly horizontal
+        else:
+            tick_dx, tick_dy = TICK_DEFAULT_DX, TICK_DEFAULT_DY
+            angle = REMARKS_ANGLE          # -45°: gentle diagonal
+
+        draw.line([(x, REMARKS_BASE_Y), (x + tick_dx, REMARKS_BASE_Y + tick_dy)],
                   fill=LINE_COLOR, width=1)
 
-        # 3. Rotated text with adaptive angle — steeper when flags are close so
-        #    text inclines upward rather than being pushed downward.
-        loc_short      = _abbrev_location(location)
-        loc_wrapped    = _wrap_remark(loc_short)   # e.g. "Milwaukee,\nWI"
-        remark_wrapped = _wrap_remark(remark)       # e.g. "30-min\nbreak"
-        text_parts     = [p for p in (loc_wrapped, remark_wrapped) if p]
+        # 3. Rotated text anchored at the tick endpoint.
+        #    Only include the location line when the driver has moved to a new
+        #    location since the last flagged event — repeating the same city name
+        #    at consecutive stops wastes space and causes overlap.
+        loc_short   = _abbrev_location(location)
+        show_loc    = loc_short != last_flagged_loc   # True when location changed
+        loc_wrapped = _wrap_remark(loc_short) if show_loc else ""
+        remark_wrapped = _wrap_remark(remark)
+        text_parts  = [p for p in (loc_wrapped, remark_wrapped) if p]
         if not text_parts:
+            last_flagged_loc = loc_short
+            last_x = x
             continue
 
         text_str = "\n".join(text_parts)
 
-        # Choose angle based on horizontal gap to previous label
-        x_gap = abs(x - last_x)
+        # For very-close labels at -10° (nearly horizontal), cycle through 3
+        # distinct Y offsets so even 3 consecutive close events are separated.
         if x_gap < REMARKS_MIN_TEXT_SPACING / 2:
-            angle = REMARKS_ANGLE_STEEP   # -85°: nearly vertical, smallest footprint
-        elif x_gap < REMARKS_MIN_TEXT_SPACING:
-            angle = REMARKS_ANGLE_NEAR    # -70°: moderately steep
+            y_extra     = REMARKS_Y_OFFSETS[stagger_idx % len(REMARKS_Y_OFFSETS)]
+            stagger_idx += 1
         else:
-            angle = REMARKS_ANGLE         # -45°: gentle diagonal
+            y_extra     = 0
+            stagger_idx = 0
 
-        n_lines    = text_str.count("\n") + 1
-        line_px    = REMARKS_TEXT_SIZE + REMARKS_LINE_SPACING
-        est_height = n_lines * line_px + REMARKS_TEXT_PADDING
-        text_x     = x - est_height // 2   # roughly centre label on flag x
+        text_x = x + tick_dx
+        text_y = REMARKS_BASE_Y + tick_dy + y_extra
 
-        _paste_rotated_text(img, text_str, text_x, REMARKS_TEXT_Y, font, angle)
+        _paste_rotated_text(img, text_str, text_x, text_y, font, angle)
+        last_flagged_loc = loc_short
         last_x = x
 
 
@@ -642,6 +703,9 @@ def generate_log_image(
 
     # Grid lines & dots
     _draw_grid_lines(draw, sorted_events)
+
+    # Bracket marks on driving row for on_duty (stationary truck) periods
+    _draw_brackets(draw, sorted_events)
 
     # Hours column
     from .hos_calculator import compute_daily_totals
