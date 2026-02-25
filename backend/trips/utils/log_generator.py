@@ -3,20 +3,26 @@ ELD (Electronic Logging Device) Daily Log Generator.
 
 Draws driver daily log entries on the blank template image using PIL.
 
-Template image: files/template/blank-driver-log.png (513x518 pixels)
-Output canvas:  OUTPUT_WIDTH = 750 px (expanded right with white padding)
+Template image: files/template/blank-driver-log.png (513×518 pixels)
 
-Grid coordinate reference (confirmed by pixel analysis):
-  - Grid left edge  (midnight start): GRID_LEFT  = 56
-  - Grid right edge (midnight end):   GRID_RIGHT = 491  (template's printed border)
-  - Grid width for 24 hours:          GRID_WIDTH = 435
-  - Pixels per hour:                  435 / 24 ≈ 18.125
+The template is scaled up to GRID_CANVAS_W=750 px so that grid content is
+clearly visible.  An additional 100 px of white canvas is appended to the
+right for the hours column, giving OUTPUT_WIDTH=850 px total.
 
-  Duty-status row centre Y positions:
-  - Off Duty (y=184–201):              ROW_Y["off_duty"]      = 192
-  - Sleeper Berth (y=201–218):         ROW_Y["sleeper_berth"] = 209
-  - Driving (y=218–235):               ROW_Y["driving"]       = 226
-  - On Duty not driving (y=235–252):   ROW_Y["on_duty"]       = 243
+All template-relative coordinates are expressed in original template pixels
+and converted to output pixels via _s() using SCALE = GRID_CANVAS_W / TEMPLATE_W.
+
+Grid coordinate reference (original template pixels → scaled output pixels):
+  - Grid left edge  (midnight start): 56  → GRID_LEFT  = _s(56)  ≈ 82
+  - Grid right edge (midnight end):   491 → GRID_RIGHT = _s(491) ≈ 718
+  - Grid width for 24 hours:          435 → GRID_WIDTH ≈ 636
+  - Pixels per hour (scaled):         GRID_WIDTH / 24 ≈ 26.5
+
+  Duty-status row centre Y positions (original → scaled):
+  - Off Duty:        192 → ROW_Y["off_duty"]      ≈ 281
+  - Sleeper Berth:   209 → ROW_Y["sleeper_berth"] ≈ 306
+  - Driving:         226 → ROW_Y["driving"]       ≈ 330
+  - On Duty (not):   243 → ROW_Y["on_duty"]       ≈ 355
 """
 
 import io
@@ -25,34 +31,43 @@ import textwrap
 from PIL import Image, ImageDraw, ImageFont
 from django.conf import settings
 
-# ── Canvas ─────────────────────────────────────────────────────────────────────
-# The blank template is 513 px wide.  We expand the output canvas to OUTPUT_WIDTH
-# by padding with white on the right.  This gives the hours column, the remarks
-# diagonal text, and the totals row more horizontal room without altering any
-# grid coordinates.
-OUTPUT_WIDTH = 750      # final output image width (px)
+# ── Canvas / Scaling ──────────────────────────────────────────────────────────
+TEMPLATE_W    = 513   # original blank-driver-log.png width  (px)
+TEMPLATE_H    = 518   # original blank-driver-log.png height (px)
+
+# The template is scaled up to GRID_CANVAS_W so that the grid content is larger
+# and more legible.  An extra margin is appended on the right for the hours column.
+GRID_CANVAS_W = 750   # width the template is scaled to fill (px)
+SCALE         = GRID_CANVAS_W / TEMPLATE_W   # ≈ 1.462 – applied to every template coord
+OUTPUT_WIDTH  = GRID_CANVAS_W + 100          # total canvas width (extra space for hours col)
+
+
+def _s(v: float) -> int:
+    """Scale an original-template pixel coordinate to the output canvas."""
+    return int(round(v * SCALE))
+
 
 # ── Grid constants ─────────────────────────────────────────────────────────────
-GRID_LEFT  = 56         # x pixel for midnight (hour 0)
-GRID_RIGHT = 491        # x pixel for midnight (hour 24) – template's printed right border;
-                        #   status lines stop exactly here so they never bleed into the
-                        #   hours column (which lives in the expanded canvas area at x≥500)
+GRID_LEFT  = _s(56)    # x pixel for hour 0 (midnight start)
+GRID_RIGHT = _s(491)   # x pixel for hour 24 (midnight end) – template's printed border
+                       #   status lines stop exactly here, leaving a clear gap before
+                       #   the hours column which lives at x ≥ GRID_CANVAS_W + gap
 GRID_WIDTH = GRID_RIGHT - GRID_LEFT   # pixels = 24 hours
 
 # Duty-status row centre Y positions
 ROW_Y = {
-    "off_duty":      192,
-    "sleeper_berth": 209,
-    "driving":       226,
-    "on_duty":       243,
+    "off_duty":      _s(192),
+    "sleeper_berth": _s(209),
+    "driving":       _s(226),
+    "on_duty":       _s(243),
 }
 
 # Bottom edge of each duty-status row (start of remarks drop-lines)
 ROW_BOTTOM = {
-    "off_duty":      201,
-    "sleeper_berth": 218,
-    "driving":       235,
-    "on_duty":       252,
+    "off_duty":      _s(201),
+    "sleeper_berth": _s(218),
+    "driving":       _s(235),
+    "on_duty":       _s(252),
 }
 
 # ── Colours ────────────────────────────────────────────────────────────────────
@@ -62,83 +77,67 @@ TEXT_BLACK    = (0,   0,   0)    # body text
 TEXT_BLUE     = (0,   0, 180)    # header fill text
 CIRCLE_RED    = (200, 0,   0)    # total-hours circle outline (red)
 
-# ── Line weights ───────────────────────────────────────────────────────────────
-LINE_WIDTH    = 2
-DOT_RADIUS    = 3
-CIRCLE_WIDTH  = 2   # thickness of the red total-hours circle
+# ── Line weights (scaled proportionally) ──────────────────────────────────────
+LINE_WIDTH    = max(2, _s(2))    # ≈ 3
+DOT_RADIUS    = max(3, _s(3))    # ≈ 4
+CIRCLE_WIDTH  = max(2, _s(2))    # ≈ 3
 
-# ── Header field positions ─────────────────────────────────────────────────────
-# Date: input values sit ABOVE the underline at y=19, centred under each sub-label.
-#   "(month)" sub-label centre x≈187, "(day)" centre x≈227, "(year)" centre x≈271.
-HDR_DATE_Y       = 7     # y for date values (pushed further above underline at y=19)
-HDR_DATE_MONTH_X = 182   # x for month value (centred under "(month)" label)
-HDR_DATE_DAY_X   = 223   # x for day value   (centred under "(day)"   label)
-HDR_DATE_YEAR_X  = 255   # x for year value  (centred under "(year)"  label)
+# ── Header field positions (all scaled from original template coordinates) ─────
+# Date values sit ABOVE the underline; sub-label centres at x≈187/227/271.
+HDR_DATE_Y       = _s(7)     # y for date values
+HDR_DATE_MONTH_X = _s(182)   # x for month value
+HDR_DATE_DAY_X   = _s(223)   # x for day value
+HDR_DATE_YEAR_X  = _s(255)   # x for year value
 
-# From / To: values go on the same row as the printed "From:" / "To:" labels.
-#   "From:" label ends at x≈86 (y=40-43); "To:" label ends at x≈270 (y=40-43).
-HDR_FROM_TO_Y    = 37    # y for From / To row (pushed up above the label text)
-HDR_FROM_X       = 90    # x for "from" value (just right of "From:" label)
-HDR_TO_X         = 278   # x for "to"   value (just right of "To:"   label)
+# "From:" label ends at x≈86; "To:" label ends at x≈270.
+HDR_FROM_TO_Y    = _s(37)    # y for From / To row
+HDR_FROM_X       = _s(90)    # x for "from" value
+HDR_TO_X         = _s(278)   # x for "to"   value
 
-HDR_MILES_Y      = 72    # y for mileage row
-HDR_MILES_DRV_X  = 85    # x for "Total Miles Driving Today"
-HDR_MILES_TOT_X  = 155   # x for "Total Mileage Today"
+HDR_MILES_Y      = _s(72)    # y for mileage row
+HDR_MILES_DRV_X  = _s(85)    # x for "Total Miles Driving Today"
+HDR_MILES_TOT_X  = _s(155)   # x for "Total Mileage Today"
 
-HDR_TRUCK_X      = 63    # x for truck / trailer numbers
-HDR_TRUCK_Y      = 105   # y for truck / trailer numbers
+HDR_TRUCK_X      = _s(63)    # x for truck / trailer numbers
+HDR_TRUCK_Y      = _s(105)   # y for truck / trailer numbers
 
-# Right block (carrier / office / terminal): values sit ABOVE each printed underline.
-#   Carrier underline y=79, Office underline y=99, Terminal underline y=120.
-#   Right block starts at x=229; left-pad 5px → text starts at x=234.
-HDR_CARRIER_X    = 234   # x for carrier / office / terminal (right block)
-HDR_CARRIER_Y    = 68    # y for carrier name  (above underline at y=79)
-HDR_OFFICE_Y     = 88    # y for main office   (above underline at y=99)
-HDR_TERMINAL_Y   = 109   # y for home terminal (above underline at y=120)
+# Right block (carrier / office / terminal): values sit ABOVE each underline.
+HDR_CARRIER_X    = _s(234)   # x for carrier / office / terminal (right block)
+HDR_CARRIER_Y    = _s(68)    # y for carrier name
+HDR_OFFICE_Y     = _s(88)    # y for main office address
+HDR_TERMINAL_Y   = _s(109)   # y for home terminal address
 
 # ── Hours column ───────────────────────────────────────────────────────────────
-# GRID_RIGHT = 491 is the template's printed midnight border.  HOURS_COL_X is
-# placed in the expanded canvas area (x > 513) so there is a clear visual gap
-# between the end of the grid line and the H:MM values.
-HOURS_COL_X      = 500   # left edge of hours text (in expanded canvas area)
-HOURS_FONT_SIZE  = 7     # font size for hours column values
+# Placed in the expanded canvas area to the right of GRID_CANVAS_W, giving a
+# clear visual gap between the midnight status-line end and the H:MM values.
+HOURS_COL_X      = GRID_CANVAS_W + 8   # 758 px – well to the right of GRID_RIGHT≈718
+HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger canvas scale
 
 # ── Remarks section ────────────────────────────────────────────────────────────
-REMARKS_BASE_Y           = 255   # y where vertical drop-lines land
-REMARKS_TEXT_SIZE        = 5     # font size for rotated remarks text (small to prevent overlap)
-REMARKS_WRAP_CHARS       = 12    # max chars per line before word-wrapping
-REMARKS_MIN_TEXT_SPACING = 30    # min x-gap (px) between rendered text labels;
-                                 # labels closer than this are suppressed to avoid collision
-REMARKS_LINE_SPACING     = 3     # extra px between lines when estimating text block height
-REMARKS_TEXT_PADDING     = 2     # extra px padding added to text block height estimate
-REMARKS_ANGLE            = -45   # rotation angle for remarks text (degrees);
-                                 # -45 = diagonal top-left to bottom-right
+REMARKS_BASE_Y           = _s(255)  # y where vertical drop-lines end
+REMARKS_TEXT_SIZE        = 6        # font size for rotated remarks text
+REMARKS_WRAP_CHARS       = 14       # max chars per line before word-wrapping
+REMARKS_MIN_TEXT_SPACING = _s(30)   # ≈ 44 px – min x-gap between text labels
+REMARKS_LINE_SPACING     = 3        # extra px between lines in height estimate
+REMARKS_TEXT_PADDING     = 2        # extra px padding added to height estimate
+REMARKS_ANGLE            = -45      # rotation angle for remarks text (degrees)
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
-# Two-line layout in the Remarks free-write area (y≈326-400):
+# Two-line layout in the remarks free-write area:
+#   Line 1 (TOTALS_Y):       "Driving: H:MM   On Duty (not driving): H:MM"
+#   Line 2 (TOTALS_TOTAL_Y): Circled total (own line, no collision risk)
 #
-#   Line 1 (TOTALS_Y):
-#     "Driving: H:MM"            starts at TOTALS_DRV_X
-#     "On Duty (not driving):…"  starts at TOTALS_DUTY_X
-#
-#   Line 2 (TOTALS_TOTAL_Y):
-#     Circled total value         starts at TOTALS_SUM_X
-#
-# Placing the circle on its own line prevents the red ellipse from touching
-# the "On Duty" text (previously only 2 px apart) and moves it to the left
-# so it is clearly visible without competition from other text.
-#
-# The pre-printed "Shipping Documents:" label occupies x≈22–100 on the left.
-# Starting TOTALS_DRV_X at 130 clears that label.
-TOTALS_Y         = 346   # y of line 1: "Driving:" + "On Duty:" labels
-TOTALS_DRV_X     = 130   # x for "Driving: ..." label (right of "Shipping Documents:")
-TOTALS_DUTY_X    = 197   # x for "On Duty (not driving): ..." (10px gap after Driving ends)
-TOTALS_TOTAL_Y   = 362   # y of line 2: circled total (16px below line 1)
-TOTALS_SUM_X     = 130   # x for circled total (left-aligned with "Driving:", clearly left)
+# TOTALS_DRV_X is chosen to clear the pre-printed "Shipping Documents:" label
+# which originally occupies x≈22–100 (scaled to x≈32–146).
+TOTALS_Y         = _s(346)   # y of line 1
+TOTALS_DRV_X     = _s(130)   # x for "Driving: ..." (right of pre-printed label)
+TOTALS_DUTY_X    = _s(197)   # x for "On Duty (not driving): ..."
+TOTALS_TOTAL_Y   = _s(362)   # y of line 2 (circled total)
+TOTALS_SUM_X     = _s(130)   # x for circled total (left-aligned with "Driving:")
 
-# Red circle around the on-duty total: centred on the number
-TOTAL_CIRCLE_PAD_X = 8   # horizontal padding inside circle
-TOTAL_CIRCLE_PAD_Y = 4   # vertical padding inside circle
+# Red circle around the on-duty total
+TOTAL_CIRCLE_PAD_X = _s(8)   # horizontal padding inside circle
+TOTAL_CIRCLE_PAD_Y = _s(4)   # vertical padding inside circle
 
 
 # ── Font helpers ───────────────────────────────────────────────────────────────
@@ -566,22 +565,27 @@ def generate_log_image(
         Base64-encoded PNG string.
     """
     template_path = str(settings.LOG_TEMPLATE_PATH)
-    img  = Image.open(template_path).convert("RGB")
+    img = Image.open(template_path).convert("RGB")
 
-    # Expand canvas to OUTPUT_WIDTH (adds white space to the right of the
-    # template so the hours column and totals have more horizontal room).
+    # Scale the template up to GRID_CANVAS_W so all grid content is larger and
+    # more legible.  Height is scaled by the same factor to preserve proportions.
+    new_h = int(round(img.height * SCALE))
+    img = img.resize((GRID_CANVAS_W, new_h), Image.LANCZOS)
+
+    # Append a white strip on the right for the hours column and totals area.
     if img.width < OUTPUT_WIDTH:
-        expanded = Image.new("RGB", (OUTPUT_WIDTH, img.height), (255, 255, 255))
+        expanded = Image.new("RGB", (OUTPUT_WIDTH, new_h), (255, 255, 255))
         expanded.paste(img, (0, 0))
         img = expanded
 
     draw = ImageDraw.Draw(img)
 
-    font_sm  = _load_font(7)
-    font_md  = _load_font(8)
-    font_lg  = _load_bold_font(9)
-    font_rem = _load_font(REMARKS_TEXT_SIZE)   # larger font for remarks
-    font_hrs = _load_font(HOURS_FONT_SIZE)     # small font for hours column
+    # Font sizes are scaled proportionally so text matches the enlarged grid.
+    font_sm  = _load_font(_s(7))
+    font_md  = _load_font(_s(8))
+    font_lg  = _load_bold_font(_s(9))
+    font_rem = _load_font(REMARKS_TEXT_SIZE)
+    font_hrs = _load_font(HOURS_FONT_SIZE)
 
     events = day_info.get("events", [])
 
