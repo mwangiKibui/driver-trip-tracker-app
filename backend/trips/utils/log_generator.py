@@ -26,10 +26,13 @@ Grid coordinate reference (original template pixels → scaled output pixels):
 
 Remarks layout:
   - REMARKS_BASE_Y ≈ 373: drop-lines end + diagonal tick starts here
-  - REMARKS_Y_LEVELS = [378, 463]: two stagger bands 90 px apart
-  - Level 0 uses REMARKS_ANGLE=-45° (gentle diagonal)
-  - Level 1 uses REMARKS_ANGLE_ALT=-70° (steeper/"writing downward")
-  - Totals drawn below level-1 text at y≈550 / y≈575
+  - REMARKS_TEXT_Y = REMARKS_BASE_Y + 5 ≈ 378: single Y anchor for ALL labels
+  - Adaptive angle — text inclines more steeply upward when flags are close,
+    so no label is pushed downward:
+      • x_gap ≥ MIN_SPACING        → REMARKS_ANGLE      = -45° (gentle diagonal)
+      • MIN_SPACING/2 ≤ x_gap < MIN_SPACING → REMARKS_ANGLE_NEAR = -70° (steeper)
+      • x_gap < MIN_SPACING/2     → REMARKS_ANGLE_STEEP = -85° (nearly vertical)
+  - Totals drawn below remarks area at y≈527 / y≈550
 """
 
 import io
@@ -122,34 +125,31 @@ HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger can
 
 # ── Remarks section ────────────────────────────────────────────────────────────
 REMARKS_BASE_Y           = _s(255)  # y where vertical drop-lines end (≈373)
+REMARKS_TEXT_Y           = REMARKS_BASE_Y + 5  # single Y anchor for ALL remarks labels (≈378)
 REMARKS_TEXT_SIZE        = 7        # font size for rotated remarks text (readable at 850px canvas)
 REMARKS_WRAP_CHARS       = 10       # max chars per line before word-wrapping (narrow blocks)
-REMARKS_MIN_TEXT_SPACING = _s(44)   # ≈ 64 px – min x-gap between labels at the same Y level
+REMARKS_MIN_TEXT_SPACING = _s(44)   # ≈ 64 px – threshold for angle-steepening
 REMARKS_LINE_SPACING     = 3        # extra px between lines in height estimate
 REMARKS_TEXT_PADDING     = 2        # extra px padding added to height estimate
-REMARKS_ANGLE            = -45      # rotation angle for level-0 remarks text (degrees)
-REMARKS_ANGLE_ALT        = -70      # steeper angle for level-1 labels ("writing downward")
-                                    # reduces horizontal footprint for dense schedules
 
-# Two Y levels for staggering remarks labels so every remark is rendered even
-# when events are close together in time (e.g. 30-min break = 14px x-gap).
-# Level 0 uses REMARKS_ANGLE (-45°); level 1 uses REMARKS_ANGLE_ALT (-70°, more
-# vertical) so the steeper text takes up less horizontal space and avoids overlap.
-# The 90-px gap between levels gives a comfortable visual separation.
-REMARKS_Y_LEVELS = [REMARKS_BASE_Y + 5, REMARKS_BASE_Y + 90]  # [378, 463]
+# Adaptive-angle constants — text inclines MORE STEEPLY when flags are close so
+# the text body rises upward into available space rather than pushing downward.
+# All labels anchor at REMARKS_TEXT_Y; only the rotation angle varies.
+REMARKS_ANGLE       = -45   # default: gentle diagonal (text goes up-right)
+REMARKS_ANGLE_NEAR  = -70   # moderately steep: x_gap < MIN_SPACING
+REMARKS_ANGLE_STEEP = -85   # nearly vertical: x_gap < MIN_SPACING / 2
 
 # ── Bottom totals ──────────────────────────────────────────────────────────────
-# Two-line layout in the remarks free-write area, placed well BELOW the level-1
-# remarks text (which at font-7 / REMARKS_ANGLE_ALT extends to y≈521):
-#   Line 1 (TOTALS_Y):       "Driving: H:MM   On Duty (not driving): H:MM"
-#   Line 2 (TOTALS_TOTAL_Y): Circled total (own line, no collision risk)
+# Two-line layout in the remarks free-write area, placed BELOW the remarks text
+# band.  Since all remarks labels now anchor at REMARKS_TEXT_Y≈378 and rise
+# UPWARD, the totals only need to clear the small area just below REMARKS_TEXT_Y.
 #
 # TOTALS_DRV_X is chosen to clear the pre-printed "Shipping Documents:" label
 # which originally occupies x≈22–100 (scaled to x≈32–146).
-TOTALS_Y         = _s(376)   # y of line 1 (≈550 px – below level-1 remarks)
+TOTALS_Y         = _s(360)   # y of line 1 (≈527 px – below remarks anchor)
 TOTALS_DRV_X     = _s(130)   # x for "Driving: ..." (right of pre-printed label)
 TOTALS_DUTY_X    = _s(197)   # x for "On Duty (not driving): ..."
-TOTALS_TOTAL_Y   = _s(393)   # y of line 2 (circled total, ≈575 px)
+TOTALS_TOTAL_Y   = _s(376)   # y of line 2 (circled total, ≈550 px)
 TOTALS_SUM_X     = _s(130)   # x for circled total (left-aligned with "Driving:")
 
 # Red circle around the on-duty total
@@ -466,23 +466,22 @@ def _draw_remarks_flags(
     For each duty-status change that has a remark or new location, draw:
       1. A short vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
       2. A diagonal 45° tick at REMARKS_BASE_Y (the "thirty-degree flag line").
-      3. Rotated text placed at one of REMARKS_Y_LEVELS so that every label is
-         visible without suppression.
+      3. Rotated text anchored at REMARKS_TEXT_Y, inclining more steeply upward
+         when consecutive flags are close together — so labels rise INTO the
+         available space above the baseline rather than being pushed downward.
 
-    Staggering strategy: two Y levels.
-      - Level 0 uses REMARKS_ANGLE (-45°): gentle diagonal, readable.
-      - Level 1 uses REMARKS_ANGLE_ALT (-70°): steeper/downward, narrower
-        horizontal footprint — avoids overlap for closely-spaced flags.
-    Level 0 is tried first; if its last label is within REMARKS_MIN_TEXT_SPACING
-    pixels on the x-axis, level 1 is used.  If both levels are occupied, the
-    label is drawn at whichever level has the most horizontal room so that no
-    remark is ever silently dropped.
+    Adaptive-angle strategy (single Y level):
+      - All labels anchor at REMARKS_TEXT_Y (= REMARKS_BASE_Y + 5).
+      - The rotation angle adapts based on horizontal distance to the previous
+        label on the same side:
+          x_gap ≥ MIN_SPACING        → REMARKS_ANGLE (-45°): gentle diagonal
+          MIN_SPACING/2 ≤ x_gap < MIN_SPACING → REMARKS_ANGLE_NEAR (-70°): moderately steep
+          x_gap < MIN_SPACING / 2   → REMARKS_ANGLE_STEEP (-85°): nearly vertical
+      - Steeper text has a smaller horizontal footprint, so the body rises higher
+        above the baseline and avoids colliding with its neighbour.
+      - No label is ever suppressed — all remarks are always rendered.
     """
-    # Track the last x position at which text was drawn for each Y level.
-    # Initialise far to the left so the first label always qualifies at level 0.
-    last_x_per_level = [-REMARKS_MIN_TEXT_SPACING * 2] * len(REMARKS_Y_LEVELS)
-    # Angles per level (level 0 = gentle diagonal, level 1 = steeper/downward)
-    angles = [REMARKS_ANGLE, REMARKS_ANGLE_ALT]
+    last_x = -REMARKS_MIN_TEXT_SPACING * 2   # track last rendered label x position
 
     for i, ev in enumerate(sorted_events):
         remark   = ev.get("remark",   "").strip()
@@ -508,7 +507,8 @@ def _draw_remarks_flags(
         draw.line([(x, REMARKS_BASE_Y), (x + tick, REMARKS_BASE_Y + tick)],
                   fill=LINE_COLOR, width=1)
 
-        # 3. Rotated text staggered across Y levels — no label is ever suppressed.
+        # 3. Rotated text with adaptive angle — steeper when flags are close so
+        #    text inclines upward rather than being pushed downward.
         loc_short      = _abbrev_location(location)
         loc_wrapped    = _wrap_remark(loc_short)   # e.g. "Milwaukee,\nWI"
         remark_wrapped = _wrap_remark(remark)       # e.g. "30-min\nbreak"
@@ -518,27 +518,22 @@ def _draw_remarks_flags(
 
         text_str = "\n".join(text_parts)
 
-        # Choose the first level with enough horizontal room from its last label.
-        # If all levels are occupied, fall back to the one with the most room so
-        # the remark is always rendered (best-effort: avoids silent data loss).
-        chosen_level = None
-        for lvl in range(len(REMARKS_Y_LEVELS)):
-            if abs(x - last_x_per_level[lvl]) >= REMARKS_MIN_TEXT_SPACING:
-                chosen_level = lvl
-                break
-        if chosen_level is None:
-            chosen_level = max(range(len(REMARKS_Y_LEVELS)),
-                               key=lambda l: abs(x - last_x_per_level[l]))
+        # Choose angle based on horizontal gap to previous label
+        x_gap = abs(x - last_x)
+        if x_gap < REMARKS_MIN_TEXT_SPACING / 2:
+            angle = REMARKS_ANGLE_STEEP   # -85°: nearly vertical, smallest footprint
+        elif x_gap < REMARKS_MIN_TEXT_SPACING:
+            angle = REMARKS_ANGLE_NEAR    # -70°: moderately steep
+        else:
+            angle = REMARKS_ANGLE         # -45°: gentle diagonal
 
-        angle      = angles[chosen_level]
-        text_y     = REMARKS_Y_LEVELS[chosen_level]
         n_lines    = text_str.count("\n") + 1
         line_px    = REMARKS_TEXT_SIZE + REMARKS_LINE_SPACING
         est_height = n_lines * line_px + REMARKS_TEXT_PADDING
         text_x     = x - est_height // 2   # roughly centre label on flag x
 
-        _paste_rotated_text(img, text_str, text_x, text_y, font, angle)
-        last_x_per_level[chosen_level] = x
+        _paste_rotated_text(img, text_str, text_x, REMARKS_TEXT_Y, font, angle)
+        last_x = x
 
 
 def _draw_bottom_totals(
