@@ -135,9 +135,10 @@ HDR_OFFICE_Y     = _s(88)    # y for main office address
 HDR_TERMINAL_Y   = _s(109)   # y for home terminal address
 
 # ── Hours column ───────────────────────────────────────────────────────────────
-# Placed in the expanded canvas area to the right of GRID_CANVAS_W, giving a
-# clear visual gap between the midnight status-line end and the H:MM values.
-HOURS_COL_X      = GRID_CANVAS_W + 8   # 758 px – well to the right of GRID_RIGHT≈718
+# Positioned inside the pre-printed hours boxes which span GRID_RIGHT→GRID_CANVAS_W
+# (x≈718–750 at the scaled resolution).  Placing text at GRID_RIGHT+5 centres
+# the H:MM values inside those boxes.
+HOURS_COL_X      = GRID_RIGHT + 5      # ≈ 723 px – inside the template's hours boxes
 HOURS_FONT_SIZE  = _s(7)               # ≈ 10 pt – legible at the larger canvas scale
 
 # ── Remarks section ────────────────────────────────────────────────────────────
