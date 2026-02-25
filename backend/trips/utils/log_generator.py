@@ -308,6 +308,18 @@ def _wrap_remark(text: str) -> str:
     return "\n".join(lines) if lines else text
 
 
+def _is_bracket_event(ev: dict) -> bool:
+    """Return True for events that should receive a U-bracket in the remarks area.
+
+    Both on_duty stationary stops (pre/post-trip, loading/unloading) and
+    off_duty 30-min mandatory breaks qualify, because in both cases the truck
+    is parked at one location for a defined time window.
+    """
+    if ev.get("status") == "on_duty":
+        return True
+    return ev.get("status") == "off_duty" and "break" in ev.get("remark", "").lower()
+
+
 def _image_to_base64(img: Image.Image) -> str:
     """Encode a PIL image as a base64 PNG string."""
     buf = io.BytesIO()
@@ -499,8 +511,9 @@ def _draw_brackets(
     font: ImageFont.FreeTypeFont,
 ) -> None:
     """
-    Draw a U-shaped bracket for each on_duty (stationary) period and attach
-    a diagonal remark line from the bracket's midpoint.
+    Draw a U-shaped bracket for each stationary period (on_duty stops and
+    off_duty 30-min breaks) and attach a diagonal remark line from the
+    bracket's midpoint.
 
     The U opens UPWARD — the vertical drop-lines at x_start and x_end already
     form the tops of the arms — so the bracket shape is:
@@ -521,7 +534,7 @@ def _draw_brackets(
     y_bottom = y_top + BRACKET_ARM
 
     for i, ev in enumerate(sorted_events):
-        if ev.get("status") != "on_duty":
+        if not _is_bracket_event(ev):
             continue
 
         t_start = ev["time"]
@@ -570,10 +583,11 @@ def _draw_remarks_flags(
       1. A vertical drop-line from the grid row bottom to REMARKS_BASE_Y.
       2. (non-on_duty only) A diagonal tick whose angle matches the text angle,
          so the label visually "moves with" the flag line.
-      3. (non-on_duty only) Rotated text anchored at the tick endpoint.
+      3. (non-bracket events only) Rotated text anchored at the tick endpoint.
 
-    on_duty events only get the drop-line here; their tick + text are rendered
-    by _draw_brackets() which places the label at the bracket midpoint.
+    on_duty stops and off_duty 30-min breaks only get the drop-line here;
+    their tick + text are rendered by _draw_brackets() which places the label
+    at the bracket midpoint.
 
     Adaptive geometry (tick angle and text angle are always matched):
       - Default (x_gap ≥ MIN_SPACING):  45° tick + -45° text (gentle diagonal).
@@ -604,8 +618,9 @@ def _draw_remarks_flags(
         draw.line([(x, ROW_BOTTOM[status]), (x, REMARKS_BASE_Y)],
                   fill=LINE_COLOR, width=1)
 
-        # on_duty events: bracket (_draw_brackets) handles tick + text at midpoint
-        if status == "on_duty":
+        # on_duty stops and off_duty breaks: bracket (_draw_brackets) handles
+        # tick + text at the bracket midpoint; only the drop-line is needed here.
+        if _is_bracket_event(ev):
             last_flagged_loc = _abbrev_location(location)
             last_x = x
             continue
