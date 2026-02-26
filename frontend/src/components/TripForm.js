@@ -33,7 +33,7 @@ const TripForm = ({ onSubmit, loading }) => {
           id="current_location"
           name="current_location"
           type="text"
-          placeholder="e.g. Chicago, IL"
+          placeholder="e.g. Bakersfield, California"
           value={formData.current_location}
           onChange={handleChange}
           required
@@ -46,7 +46,7 @@ const TripForm = ({ onSubmit, loading }) => {
           id="pickup_location"
           name="pickup_location"
           type="text"
-          placeholder="e.g. Milwaukee, WI"
+          placeholder="e.g. Los Angeles, California"
           value={formData.pickup_location}
           onChange={handleChange}
           required
@@ -59,7 +59,7 @@ const TripForm = ({ onSubmit, loading }) => {
           id="dropoff_location"
           name="dropoff_location"
           type="text"
-          placeholder="e.g. Minneapolis, MN"
+          placeholder="e.g. Reno, Nevada"
           value={formData.dropoff_location}
           onChange={handleChange}
           required
@@ -75,7 +75,7 @@ const TripForm = ({ onSubmit, loading }) => {
           min="0"
           max="70"
           step="0.5"
-          placeholder="e.g. 20.5"
+          placeholder="e.g. 36"
           value={formData.current_cycle_used}
           onChange={handleChange}
           required
